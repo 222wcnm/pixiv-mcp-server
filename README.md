@@ -80,9 +80,9 @@ python get_token.py
       "args": [
         "/path/to/your/project/pixiv_mcp_server.py"
       ],
-      "environment": {
+      "env": {
         "PIXIV_REFRESH_TOKEN"= "从.env文件复制或留空自动读取",
-        "DOWNLOAD_PATH"= "D:\\MyPixivDownloads",
+        "DOWNLOAD_PATH"= "./downloads",
         "FILENAME_TEMPLATE"= "{author}_{id}_{title}"
       }
     }
