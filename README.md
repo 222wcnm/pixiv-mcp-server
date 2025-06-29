@@ -82,7 +82,7 @@ python get_token.py
       ],
       "env": {
         "PIXIV_REFRESH_TOKEN": "从.env文件复制或留空自动读取",
-        "DOWNLOAD_PATH: "./downloads",
+        "DOWNLOAD_PATH": "./downloads",
         "FILENAME_TEMPLATE": "{author}_{id}_{title}"
       }
     }
