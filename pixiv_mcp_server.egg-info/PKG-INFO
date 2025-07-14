@@ -1,3 +1,46 @@
+Metadata-Version: 2.4
+Name: pixiv-mcp-server
+Version: 2.0.0
+Summary: A powerful Pixiv toolset for Large Language Models via MCP.
+Author-email: AI <ai@example.com>
+License: MIT License
+        
+        Copyright (c) 2025 [Your Name]
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Homepage, https://github.com/222wcnm/pixiv-mcp-server
+Project-URL: Issues, https://github.com/222wcnm/pixiv-mcp-server/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: pixivpy3>=3.7.0
+Requires-Dist: aiohttp>=3.8.0
+Requires-Dist: aiofiles>=23.0.0
+Requires-Dist: requests>=2.28.0
+Requires-Dist: python-dotenv>=1.0.0
+Dynamic: license-file
+
 # Pixiv MCP Server
 
 > 一个功能强大的 Pixiv 工具集，通过模型上下文协议 (MCP) 为大语言模型（如 Claude）提供浏览、搜索和下载 Pixiv 内容的能力。
@@ -80,30 +123,28 @@ python get_token.py
 
 > **重要提示**：请严格按照终端提示操作。成功后会自动创建 `.env` 配置文件。
 
-### 步骤 4: 启动与配置
+### 步骤 4: 启动服务器
 
-完成安装后，项目已经注册为一个系统命令。
+项目现在通过模块化方式启动。直接在项目根目录运行：
 
-#### 直接启动 (可选)
-你可以在终端直接运行以下命令来启动服务器：
 ```bash
-pixiv-mcp-server
+python -m pixiv_mcp_server
 ```
 
-#### 配置 MCP 客户端
-在您的 MCP 客户端中，请使用以下配置。此配置利用 `uv` 的 `--directory` 参数，无需客户端支持 `cwd` 字段，兼容性更佳。
+### 步骤 5: 配置 MCP 客户端
+
+在您的 MCP 客户端（如 Claude for Desktop）中添加新服务器。**注意 `command` 和 `args` 的变化**。
 
 ```json
 {
   "mcpServers": {
     "pixiv-server": {
-      "command": "uv",
+      "command": "python",
       "args": [
-        "--directory",
-        "c:/Users/nc17/Documents/Cline/MCP/pixiv-mcp-server",
-        "run",
-        "pixiv-mcp-server"
+        "-m",
+        "pixiv_mcp_server"
       ],
+      "cwd": "/path/to/your/project/pixiv-mcp-server",
       "env": {
         "PIXIV_REFRESH_TOKEN": "从.env文件复制或留空自动读取",
         "DOWNLOAD_PATH": "./downloads",
@@ -115,47 +156,40 @@ pixiv-mcp-server
 ```
 
 > **配置说明**：
-> - `pixiv-server` 可自定义为任意名称。
-> - `command` 使用 `uv`。
-> - `args` 中通过 `--directory` 指定项目根目录，然后 `run pixiv-mcp-server` 启动服务。
-> - `env` 部分为可选配置，未配置的环境变量将从 `.env` 文件读取。
+> - `cwd` 字段是必需的，请设置为项目的**绝对路径**。
+> - `command` 现在是 `python`，`args` 是 `["-m", "pixiv_mcp_server"]`，这会以模块方式运行服务器。
 
-## ✨ 主要功能与工具详解
+> **配置说明**：
+> - `pixiv-server` 可自定义为任意名称
+> - `environment` 部分为可选配置
+> - 未配置的环境变量将从 `.env` 文件读取
 
-### 🔍 多维度搜索
-- `search_illust(word, ...)` - 根据关键词搜索插画，可选择是否包含 R-18 内容。
-- `search_user(word)` - 搜索用户。
-- `trending_tags_illust()` - 获取当前的热门标签趋势。
-- `illust_related(illust_id)` - 获取与指定插画相关的推荐作品。
+## 🛠️ 工具功能详解
 
-### 📥 智能下载
-- `download(illust_id, illust_ids)` - 异步后台下载单个或多个作品。工具会自动判断类型并应用智能存储规则。动图(Ugoira)会自动转换为高质量GIF，并清理临时文件。
-- `download_random_from_recommendation(count)` - 从用户的Pixiv推荐页随机下载N张插画。此为完成此类请求的最佳方式，会自动处理下载和动图转换。
-- `set_download_path(path)` - 设置图片和动图的默认本地保存位置。路径不存在时会自动创建。
+### 认证与配置
+- `auth(token)` - 手动认证（通常不需要，`.env` 文件自动处理）
+- `set_download_path(path)` - 更改下载目录
 
-### 👥 社区内容浏览
-- `illust_recommended()` - 获取官方推荐插画的文本列表。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。
-- `illust_follow()` - 获取已关注作者的最新作品（首页动态）(需要认证)。
-- `user_bookmarks(user_id)` - 获取用户的收藏列表 (需要认证)。
-- `user_following(user_id)` - 获取用户的关注列表 (需要认证)。
-- `illust_detail(illust_id)` - 获取单张插画的详细信息。
-- `illust_ranking(mode)` - 获取插画排行榜（日榜/周榜/月榜等）。
+### 核心下载功能
+- `download(illust_id, illust_ids)` - 异步下载单个或多个作品
+- `download_random_from_recommendation(count)` - 随机下载推荐作品
 
-### 🔐 安全认证
-- 使用官方推荐的 OAuth 2.0 (PKCE) 流程。
-- 提供 `get_token.py` 一次性认证向导脚本。
-- 自动生成和管理 `.env` 配置文件。
-- 支持令牌刷新功能。
-- **重要提示**：服务器启动时会自动尝试使用环境变量中的 `PIXIV_REFRESH_TOKEN` 进行认证。无需手动调用认证工具。
+### 搜索与发现
+- `search_illust(word, ...)` - 插画搜索（支持 R-18 内容过滤）
+- `search_user(word)` - 用户搜索
+- `search_autocomplete(word)` - 标签自动补全
+- `trending_tags_illust()` - 获取热门标签
 
-## 🚀 最新更新与改进
+### 浏览与信息获取
+- `illust_detail(illust_id)` - 获取作品详细信息
+- `illust_related(illust_id)` - 查找相似作品
+- `illust_ranking(mode)` - 获取排行榜
 
-- **更稳定的 MCP 客户端配置**：优化了启动配置，现在无需客户端支持 `cwd` 字段，通过 `uv --directory` 参数直接指定项目路径，兼容性更强。
-- **动图（Ugoira）合成质量提升**：修复了动图转换时可能出现的画面不完整或黑色块问题，现在生成的 GIF 质量更高。
-- **下载任务反馈优化**：修改了 `download` 工具的返回话术，明确提示动图合成可能需要时间，避免 AI 重复调用。
-- **自动清理临时文件**：修复了动图转换后遗留 `.zip` 压缩包的 Bug，现在会自动清理。
-- **移除了冗余的 `auth` 工具**：简化了工具集，避免 AI 在自动认证失败时误导性地向用户索要 Token。
-- **全面优化工具描述**：对所有工具的描述和返回话术进行了细致调整，提升 AI 对工具的理解和交互体验。
+### 个人化内容（需要认证）
+- `illust_recommended()` - 获取个人推荐
+- `illust_follow()` - 关注画师的最新作品
+- `user_bookmarks(user_id)` - 查看收藏夹
+- `user_following(user_id)` - 查看关注列表
 
 ## ⚙️ 环境变量配置
 
