@@ -91,7 +91,7 @@ pixiv-mcp-server
 ```
 
 #### 配置 MCP 客户端
-在您的 MCP 客户端中，请使用以下配置。此配置利用 `uv` 的 `--directory` 参数，无需客户端支持 `cwd` 字段，兼容性更佳。
+在您的 MCP 客户端中，请使用以下配置。
 
 ```json
 {
@@ -100,7 +100,7 @@ pixiv-mcp-server
       "command": "uv",
       "args": [
         "--directory",
-        "c:/Users/nc17/Documents/Cline/MCP/pixiv-mcp-server",
+        ".",
         "run",
         "pixiv-mcp-server"
       ],
@@ -117,7 +117,7 @@ pixiv-mcp-server
 > **配置说明**：
 > - `pixiv-server` 可自定义为任意名称。
 > - `command` 使用 `uv`。
-> - `args` 中通过 `--directory` 指定项目根目录，然后 `run pixiv-mcp-server` 启动服务。
+> - `args` 中通过 `--directory .` 指定**当前工作目录**为项目根目录（假设您已 `cd` 进入项目文件夹），然后 `run pixiv-mcp-server` 启动服务。
 > - `env` 部分为可选配置，未配置的环境变量将从 `.env` 文件读取。
 
 ## ✨ 主要功能与工具详解
