@@ -16,8 +16,16 @@ class PixivState:
         self.refresh_token: Optional[str] = os.getenv('PIXIV_REFRESH_TOKEN')
         self.download_path = os.getenv('DOWNLOAD_PATH', './downloads')
         self.filename_template = os.getenv('FILENAME_TEMPLATE', '{author} - {title}_{id}')
-        # 新增：并发下载控制器，限制为5个并发
-        self.download_semaphore = asyncio.Semaphore(5)
+        
+        # 下载任务状态跟踪
+        self.download_tasks = {}
+
+        # 动图输出格式 (gif, webp, apng)
+        self.ugoira_format = "webp"
+
+        # 并发控制器
+        self.download_semaphore = asyncio.Semaphore(8)  # 网络I/O并发
+        self.cpu_bound_semaphore = asyncio.Semaphore(os.cpu_count() or 2) # CPU密集型任务并发
 
         proxy = os.getenv('https_proxy')
         if proxy:

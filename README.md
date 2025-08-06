@@ -1,59 +1,45 @@
-# Pixiv MCP Server
+# Pixiv MCP Server v2.0
 
-> 一个功能强大的 Pixiv 工具集，通过模型上下文协议 (MCP) 为大语言模型（如 Claude）提供浏览、搜索和下载 Pixiv 内容的能力。
+> 一个功能强大的 Pixiv 工具集，通过模型上下文协议 (MCP) 为大语言模型（如 Claude）提供浏览、搜索和下载 Pixiv 内容的能力。经过全面重构，现已支持下载状态跟踪和高性能动图转换。
 
-## ✨ 主要功能
+## ✨ v2.0 核心功能重构
 
-### 🔍 多维度搜索
-- 关键词搜索（`search_illust`）
-- 用户搜索（`search_user`）
-- 标签自动补全（`search_autocomplete`）
-- 排行榜浏览（`illust_ranking` - 日榜/周榜/月榜等）
-- 热门标签趋势（`trending_tags_illust`）
-- 相关作品推荐（`illust_related`）
+本次更新对核心功能进行了彻底重构，显著提升了应用的健壮性、性能和用户体验。
 
-### 📥 智能下载
-- 支持单个或批量作品下载（通过 `download` 工具）
-- 异步后台下载，不阻塞 AI 操作
-- 自动为多页作品（漫画）或动图创建独立子文件夹
-- 动态检测 FFmpeg，自动将动图 (Ugoira) 转换为 GIF 格式
-- 智能文件名清理，防止文件系统错误
-- 支持随机推荐下载（`download_random_from_recommendation`）
+### 1. 引入下载任务状态跟踪
+- **解决“即发即忘”**: `download` 工具不再是简单的触发，而是会返回一个唯一的 **任务ID**。
+- **实时进度查询**: 通过新增的 `get_download_status` 工具，AI 可以根据任务ID实时查询每个下载任务的状态（如排队中、下载中、处理中、成功、失败）。
+- **透明的错误处理**: 下载失败时，状态查询会返回详细的错误信息，便于调试和重试。
 
-### 👥 社区内容浏览
-- 个人推荐内容（`illust_recommended`）
-- 关注画师动态（`illust_follow`）
-- 用户收藏夹浏览（`user_bookmarks`）
-- 关注列表查看（`user_following`）
-- 作品详细信息获取（`illust_detail`）
+### 2. 动图 (Ugoira) 合成性能优化
+- **默认使用 WebP**: 动图默认转换为性能和质量更优的 **WebP** 格式，文件体积更小，加载速度更快。
+- **性能参数调优**: 优化了 FFmpeg 的调用参数，使用 `-preset ultrafast` 等选项显著加快了合成速度。
+- **并发控制**: 引入信号量（Semaphore）机制，智能控制 CPU 密集型任务（如视频转码）的并发数量，防止系统过载，保证多任务并行处理的稳定性。
+- **格式可切换**: 新增 `set_ugoira_format` 工具，允许用户在 `webp` 和 `gif` 之间按需切换。
 
-### 🔐 安全认证
-- 使用官方推荐的 OAuth 2.0 (PKCE) 流程
-- 提供 `get_token.py` 一次性认证向导脚本
-- 自动生成和管理 `.env` 配置文件
-- 支持令牌刷新功能
+### 3. 代码质量与可维护性提升
+- **认证逻辑重构**: 使用 `@require_authentication` 装饰器统一了所有需要登录的工具的认证流程，遵循了 DRY (Don't Repeat Yourself) 原则，代码更简洁、更易于维护。
+- **配置加载优化**: 确认并优化了启动时的配置加载逻辑，确保环境变量的正确读取和应用。
+
+---
 
 ## 🔧 环境要求
 
 | 组件 | 版本要求 | 说明 |
 |------|----------|------|
 | Python | 3.10+ | 建议使用最新稳定版 |
-| FFmpeg | 最新版 | 可选，用于 Ugoira 动图转 GIF |
+| FFmpeg | 最新版 | **必需**，用于 Ugoira 动图转 WebP/GIF |
 | MCP 客户端 | - | 如 Claude for Desktop |
 
 ## 🚀 快速开始
 
 ### 步骤 1: 克隆或下载项目
-
 ```bash
 git clone https://github.com/222wcnm/pixiv-mcp-server.git
 cd pixiv-mcp-server
 ```
 
 ### 步骤 2: 安装依赖 (推荐使用 uv)
-
-本项目使用 `pyproject.toml` 管理依赖。推荐使用 `uv` 进行安装，它是一个极速的 Python 包管理器。
-
 ```bash
 # 安装 uv (如果尚未安装)
 pip install uv
@@ -63,36 +49,15 @@ uv venv
 uv pip install -e .
 ```
 
-如果您仍希望使用 `pip`：
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e .
-```
-
 ### 步骤 3: 获取认证 Token
-
 运行认证向导：
-
 ```bash
 python get_token.py
 ```
-
 > **重要提示**：请严格按照终端提示操作。成功后会自动创建 `.env` 配置文件。
 
 ### 步骤 4: 启动与配置
-
-完成安装后，项目已经注册为一个系统命令。
-
-#### 直接启动 (可选)
-你可以在终端直接运行以下命令来启动服务器：
-```bash
-pixiv-mcp-server
-```
-
-#### 配置 MCP 客户端
 在您的 MCP 客户端中，请使用以下配置。
-
 ```json
 {
   "mcpServers": {
@@ -113,49 +78,34 @@ pixiv-mcp-server
   }
 }
 ```
-
-> **配置说明**：
-> - `pixiv-server` 可自定义为任意名称。
-> - `command` 使用 `uv`。
-> - `args` 中通过 `--directory /path/to/your/pixiv-mcp-server` 指定项目根目录的**绝对路径**（请务必替换为您的实际路径，例如 `C:/Users/YourName/Documents/pixiv-mcp-server`），然后 `run pixiv-mcp-server` 启动服务。
-> - `env` 部分为可选配置，未配置的环境变量将从 `.env` 文件读取。
+> **配置说明**：请务必将 `/path/to/your/pixiv-mcp-server` 替换为项目根目录的**绝对路径**。
 
 ## ✨ 主要功能与工具详解
 
-### 🔍 多维度搜索
-- `search_illust(word, ...)` - 根据关键词搜索插画，可选择是否包含 R-18 内容。
-- `search_user(word)` - 搜索用户。
-- `trending_tags_illust()` - 获取当前的热门标签趋势。
-- `illust_related(illust_id)` - 获取与指定插画相关的推荐作品。
+### 📥 智能下载与状态管理
+- `download(illust_id, illust_ids)`: **异步后台下载**。此工具会为每个作品创建一个后台任务，并返回一个包含**任务ID列表**的JSON对象。
+- `get_download_status(task_id, task_ids)`: **查询下载状态**。使用 `download` 工具返回的任务ID来查询一个或多个任务的实时状态（如 `queued`, `downloading`, `processing`, `success`, `failed`）和详细信息。
+- `download_random_from_recommendation(count)`: 从用户推荐中随机下载N张插画，并返回下载任务ID。
+- `set_download_path(path)`: 设置下载文件的根目录。
+- `set_ugoira_format(format)`: 设置动图转换的输出格式，支持 `webp` (默认) 和 `gif`。
 
-### 📥 智能下载
-- `download(illust_id, illust_ids)` - 异步后台下载单个或多个作品。工具会自动判断类型并应用智能存储规则。动图(Ugoira)会自动转换为高质量GIF，并清理临时文件。
-- `download_random_from_recommendation(count)` - 从用户的Pixiv推荐页随机下载N张插画。此为完成此类请求的最佳方式，会自动处理下载和动图转换。
-- `set_download_path(path)` - 设置图片和动图的默认本地保存位置。路径不存在时会自动创建。
+### 🔍 多维度搜索
+- `search_illust(word, ...)`: 根据关键词搜索插画。
+- `search_user(word)`: 搜索用户。
+- `trending_tags_illust()`: 获取当前的热门标签趋势。
+- `illust_ranking(mode)`: 获取插画排行榜（日榜/周榜/月榜等）。
+- `illust_related(illust_id)`: 获取相关推荐作品。
 
 ### 👥 社区内容浏览
-- `illust_recommended()` - 获取官方推荐插画的文本列表。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。
-- `illust_follow()` - 获取已关注作者的最新作品（首页动态）(需要认证)。
-- `user_bookmarks(user_id)` - 获取用户的收藏列表 (需要认证)。
-- `user_following(user_id)` - 获取用户的关注列表 (需要认证)。
-- `illust_detail(illust_id)` - 获取单张插画的详细信息。
-- `illust_ranking(mode)` - 获取插画排行榜（日榜/周榜/月榜等）。
+- `illust_recommended()`: 获取官方推荐插画列表。
+- `illust_follow()`: 获取已关注作者的最新作品（需要认证）。
+- `user_bookmarks(user_id)`: 获取用户的收藏列表（需要认证）。
+- `user_following(user_id)`: 获取用户的关注列表（需要认证）。
+- `illust_detail(illust_id)`: 获取单张插画的详细信息。
 
 ### 🔐 安全认证
-- 使用官方推荐的 OAuth 2.0 (PKCE) 流程。
-- 提供 `get_token.py` 一次性认证向导脚本。
-- 自动生成和管理 `.env` 配置文件。
-- 支持令牌刷新功能。
-- **重要提示**：服务器启动时会自动尝试使用环境变量中的 `PIXIV_REFRESH_TOKEN` 进行认证。无需手动调用认证工具。
-
-## 🚀 最新更新与改进
-
-- **更稳定的 MCP 客户端配置**：优化了启动配置，现在无需客户端支持 `cwd` 字段，通过 `uv --directory` 参数直接指定项目路径，兼容性更强。
-- **动图（Ugoira）合成质量提升**：修复了动图转换时可能出现的画面不完整或黑色块问题，现在生成的 GIF 质量更高。
-- **下载任务反馈优化**：修改了 `download` 工具的返回话术，明确提示动图合成可能需要时间，避免 AI 重复调用。
-- **自动清理临时文件**：修复了动图转换后遗留 `.zip` 压缩包的 Bug，现在会自动清理。
-- **移除了冗余的 `auth` 工具**：简化了工具集，避免 AI 在自动认证失败时误导性地向用户索要 Token。
-- **全面优化工具描述**：对所有工具的描述和返回话术进行了细致调整，提升 AI 对工具的理解和交互体验。
+- 使用官方推荐的 OAuth 2.0 (PKCE) 流程，通过 `get_token.py` 脚本简化认证。
+- 服务器启动时会自动使用 `PIXIV_REFRESH_TOKEN` 环境变量进行认证。
 
 ## ⚙️ 环境变量配置
 
@@ -164,33 +114,16 @@ pixiv-mcp-server
 | `PIXIV_REFRESH_TOKEN` | ✅ | Pixiv API 认证令牌 | 无 |
 | `DOWNLOAD_PATH` | ❌ | 下载文件根目录 | `./downloads` |
 | `FILENAME_TEMPLATE` | ❌ | 文件命名模板 | `{author} - {title}_{id}` |
-| ~~`https_proxy`~~ | ❌ | ~~代理服务器地址~~ | ~~无~~ |
-
-### 文件命名模板变量
-
-- `{author}` - 作者名称
-- `{title}` - 作品标题
-- `{id}` - 作品 ID
 
 ## 🔗 相关资源
-
 - **FastMCP**: [MCP 服务器框架](https://github.com/jlowin/fastmcp)
 - **pixivpy3**: [Pixiv API Python 库](https://github.com/upbit/pixivpy)
 - **MCP 协议**: [模型上下文协议文档](https://modelcontextprotocol.io/)
 
 ## ⚠️ 免责声明
-
-本工具旨在便于用户通过现代 AI 工具访问个人 Pixiv 账号内容。使用时请：
-
-- 遵守 Pixiv 用户协议
-- 负责任地使用工具
-- 尊重版权和创作者权益
-
-开发者对任何账号相关问题不承担责任。所有操作均代表用户本人意愿。
+本工具旨在便于用户通过现代 AI 工具访问个人 Pixiv 账号内容。使用时请遵守 Pixiv 用户协议，并尊重版权和创作者权益。开发者对任何账号相关问题不承担责任。
 
 ---
 
 > **🤖 AI 生成内容说明**  
 > 本项目的代码和文档内容完全由人工智能生成。虽然经过了结构分析和功能测试，但仍可能存在不完善之处。使用前请仔细测试，如遇问题请及时反馈。
-
-*如有问题或建议，欢迎反馈交流。*

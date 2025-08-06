@@ -1,8 +1,9 @@
+import functools
 import logging
 import re
 import subprocess
 import sys
-from typing import Optional
+from typing import Callable, Optional
 
 from .state import state
 
@@ -71,3 +72,15 @@ def format_user_summary(user_preview: dict) -> str:
         f"  关注状态: {'已关注' if user.get('is_followed') else '未关注'}\n"
         f"  简介: {user.get('comment', '无')}"
     )
+
+def require_authentication(func: Callable) -> Callable:
+    """
+    一个装饰器，用于保护需要认证的工具函数。
+    如果用户未认证，则返回统一的错误信息。
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not state.is_authenticated:
+            return "错误: 此功能需要认证。请在客户端配置 PIXIV_REFRESH_TOKEN 环境变量或确保认证成功。"
+        return await func(*args, **kwargs)
+    return wrapper
