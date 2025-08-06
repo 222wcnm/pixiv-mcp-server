@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,7 +10,12 @@ from mcp.server.fastmcp import FastMCP
 
 from .downloader import _background_download_single
 from .state import state
-from .utils import format_illust_summary, format_user_summary, handle_api_error
+from .utils import (
+    format_illust_summary,
+    format_user_summary,
+    handle_api_error,
+    require_authentication,
+)
 
 logger = logging.getLogger('pixiv-mcp-server')
 mcp = FastMCP("pixiv-server")
@@ -27,8 +33,23 @@ async def set_download_path(path: str) -> str:
         return f"错误：无法设置下载路径。请检查路径 '{path}' 是否有效且程序有写入权限。错误详情: {e}"
 
 @mcp.tool()
+async def set_ugoira_format(format: str) -> str:
+    """设置动图(Ugoira)转换后的文件格式。"""
+    supported_formats = ["webp", "gif"]
+    if format.lower() not in supported_formats:
+        return f"错误：不支持的格式 '{format}'。请选择以下格式之一: {', '.join(supported_formats)}。"
+    
+    state.ugoira_format = format.lower()
+    logger.info(f"动图输出格式已更新为: {state.ugoira_format}")
+    return f"动图输出格式已成功设置为: {format.lower()}。"
+
+@mcp.tool()
 async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[int]] = None) -> str:
-    """下载一个或多个指定ID的作品。工具会自动判断类型并应用智能存储规则。此为异步后台操作。"""
+    """
+    下载一个或多个指定ID的作品。此为异步后台操作。
+    该工具会为每个作品启动一个独立的后台下载任务，并返回这些任务的ID列表。
+    你可以使用 `get_download_status` 工具来查询每个任务的下载进度和结果。
+    """
     if not illust_id and not illust_ids:
         return "错误：必须提供 illust_id (单个ID) 或 illust_ids (ID列表) 参数之一。"
 
@@ -39,18 +60,52 @@ async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[in
         id_list.extend(illust_ids)
     
     unique_ids = sorted(list(set(id_list)))
+    task_ids = []
     
     for an_id in unique_ids:
-        asyncio.create_task(_background_download_single(an_id))
+        task_id = f"task_{uuid.uuid4()}"
+        task_ids.append(task_id)
+        state.download_tasks[task_id] = {
+            "illust_id": an_id,
+            "status": "queued",
+            "message": "任务已创建，正在等待调度。",
+        }
+        asyncio.create_task(_background_download_single(task_id, an_id))
     
-    return f"已成功将 {len(unique_ids)} 个作品的下载任务派发至后台。请注意，动图(Ugoira)合成可能需要几十秒到数分钟，请耐心等待文件下载和处理完成。"
+    return json.dumps({
+        "message": f"已成功为 {len(unique_ids)} 个作品创建下载任务。请使用 get_download_status 工具凭任务ID查询进度。",
+        "task_ids": task_ids
+    }, ensure_ascii=False, indent=2)
 
 @mcp.tool()
+async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[List[str]] = None) -> str:
+    """
+    查询一个或多个下载任务的当前状态。
+    如果不提供任何ID，将返回最近10个任务的摘要。
+    """
+    if not task_id and not task_ids:
+        # 返回最近10个任务的摘要
+        recent_tasks = dict(sorted(state.download_tasks.items(), key=lambda item: item[1].get('updated_at', 0), reverse=True)[:10])
+        if not recent_tasks:
+            return "当前没有活动的下载任务。"
+        return json.dumps(recent_tasks, ensure_ascii=False, indent=2)
+
+    id_list = []
+    if task_id:
+        id_list.append(task_id)
+    if task_ids:
+        id_list.extend(task_ids)
+    
+    results = {}
+    for an_id in id_list:
+        results[an_id] = state.download_tasks.get(an_id, {"status": "not_found", "message": "未找到指定的任务ID。"})
+        
+    return json.dumps(results, ensure_ascii=False, indent=2)
+
+@mcp.tool()
+@require_authentication
 async def download_random_from_recommendation(count: int = 5) -> str:
     """从用户的Pixiv推荐页随机下载N张插画。此为完成此类请求的最佳方式，会自动处理下载和动图转换。"""
-    if not state.is_authenticated:
-        return "错误: 此功能需要认证。请先使用 auth 工具或在客户端设置 PIXIV_REFRESH_TOKEN 环境变量。"
-
     try:
         json_result = await asyncio.to_thread(state.api.illust_recommended)
         error = handle_api_error(json_result)
@@ -152,11 +207,9 @@ async def search_user(word: str, offset: int = 0) -> str:
     return f"找到 {len(users)} 位用户:\n\n" + "\n\n".join(summary_list)
 
 @mcp.tool()
+@require_authentication
 async def illust_recommended(offset: int = 0) -> str:
     """获取官方推荐插画的文本列表。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。"""
-    if not state.is_authenticated:
-        return "错误: 此功能需要认证。请先使用 auth 工具或在客户端设置 PIXIV_REFRESH_TOKEN 环境变量。"
-        
     json_result = await asyncio.to_thread(state.api.illust_recommended, offset=offset)
     error = handle_api_error(json_result)
     if error:
@@ -185,11 +238,9 @@ async def trending_tags_illust() -> str:
     return "当前的热门标签:\n" + "\n".join(tag_list)
 
 @mcp.tool()
+@require_authentication
 async def illust_follow(restrict: str = "public", offset: int = 0) -> str:
     """获取已关注作者的最新作品（首页动态）(需要认证)。"""
-    if not state.is_authenticated:
-        return "错误: 此功能需要认证。请先使用 auth 工具或在客户端设置 PIXIV_REFRESH_TOKEN 环境变量。"
-        
     json_result = await asyncio.to_thread(state.api.illust_follow, restrict=restrict, offset=offset)
     error = handle_api_error(json_result)
     if error:
@@ -203,11 +254,9 @@ async def illust_follow(restrict: str = "public", offset: int = 0) -> str:
     return f"找到 {len(illusts)} 篇关注动态:\n\n" + "\n\n".join(summary_list)
 
 @mcp.tool()
+@require_authentication
 async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None) -> str:
     """获取用户的收藏列表 (需要认证)。"""
-    if not state.is_authenticated:
-        return "错误: 此功能需要认证。请先使用 auth 工具或在客户端设置 PIXIV_REFRESH_TOKEN 环境变量。"
-    
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
          return "错误: 查询自己的收藏时，需要先认证以获取用户ID。"
@@ -225,11 +274,9 @@ async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str =
     return f"找到用户 {target_user_id} 的 {len(illusts)} 个收藏:\n\n" + "\n\n".join(summary_list)
 
 @mcp.tool()
+@require_authentication
 async def user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0) -> str:
     """获取用户的关注列表 (需要认证)。"""
-    if not state.is_authenticated:
-        return "错误: 此功能需要认证。请先使用 auth 工具或在客户端设置 PIXIV_REFRESH_TOKEN 环境变量。"
-    
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
          return "错误: 查询自己的关注列表时，需要先认证以获取用户ID。"
