@@ -4,12 +4,12 @@
 
 ## ✨ 主要功能
 
-### 📥 智能下载与状态管理
-- **异步后台下载**: `download` 工具会为每个作品创建一个后台任务，并返回一个包含**任务ID列表**的JSON对象，不阻塞AI的后续操作。
-- **实时状态查询**: 使用 `get_download_status` 工具和任务ID，可以实时查询每个下载任务的状态（如 `queued`, `downloading`, `processing`, `success`, `failed`）和详细信息。
-- **高性能动图转换**: 动图 (Ugoira) 会被自动转换为性能和质量更优的 **WebP** 格式。通过 `set_ugoira_format` 工具，也可以按需切换为 `gif` 格式。
-- **并发与性能优化**: 智能控制网络下载和CPU密集型任务（如视频转码）的并发数量，防止系统过载，保证多任务并行处理的稳定性。
-- **便捷功能**: 支持通过 `download_random_from_recommendation` 从推荐中随机下载，以及通过 `set_download_path` 自定义存储位置。
+### 📥 下载与任务管理
+- `download(illust_id)`: 异步下载指定作品，返回任务ID用于追踪。
+- `get_download_status(task_id)`: 查询下载任务的实时状态（排队、下载中、成功、失败）。
+- `download_random_from_recommendation(count)`: 从个性化推荐中随机下载指定数量的作品。
+- `set_download_path(path)`: 自定义作品的本地保存路径。
+- `set_ugoira_format(format)`: 设定动图（Ugoira）保存的格式（`webp` 或 `gif`）。
 
 ### 🔍 多维度搜索
 - `search_illust(word, ...)`: 根据关键词搜索插画。
