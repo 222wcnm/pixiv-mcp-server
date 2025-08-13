@@ -1,0 +1,27 @@
+# 排除敏感配置
+.env
+
+# 排除下载目录
+downloads/
+
+# Python 缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 环境文件
+.env
+.venv
+venv/
+
+# 编辑器文件
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
