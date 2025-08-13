@@ -1,2 +1,0 @@
-[console_scripts]
-pixiv-mcp-server = pixiv_mcp_server.__main__:main

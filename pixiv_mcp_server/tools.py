@@ -32,7 +32,7 @@ async def set_download_path(path: str) -> dict:
     except Exception as e:
         logger.error(f"设置下载路径失败: {e}")
         return {"ok": False, "error": f"无法设置下载路径: {e}", "path": path}
- 
+
 @mcp.tool()
 async def set_ugoira_format(format: str) -> dict:
     """设置动图(Ugoira)转换后的文件格式。"""
@@ -43,7 +43,7 @@ async def set_ugoira_format(format: str) -> dict:
     state.ugoira_format = format.lower()
     logger.info(f"动图输出格式已更新为: {state.ugoira_format}")
     return {"ok": True, "ugoira_format": state.ugoira_format}
- 
+
 @mcp.tool()
 async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[int]] = None) -> dict:
     """
@@ -81,7 +81,7 @@ async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[in
         "message": f"已成功为 {len(unique_ids)} 个作品创建下载任务。请使用 get_download_status 工具凭任务ID查询进度。",
         "task_ids": task_ids
     }
- 
+
 @mcp.tool()
 async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[List[str]] = None) -> dict:
     """
@@ -105,7 +105,7 @@ async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[
     for an_id in id_list:
         results[an_id] = state.download_tasks.get(an_id, {"status": "not_found", "message": "未找到指定的任务ID。"})
     return {"ok": True, "tasks": results}
- 
+
 @mcp.tool()
 @require_authentication
 async def download_random_from_recommendation(count: int = 5) -> dict:
@@ -115,7 +115,7 @@ async def download_random_from_recommendation(count: int = 5) -> dict:
         error = handle_api_error(json_result)
         if error:
             return {"ok": False, "error": f"获取推荐列表失败: {error}"}
- 
+
         illusts = json_result.get('illusts', [])
         if not illusts:
             return {"ok": False, "error": "无法获取推荐内容，列表为空。"}
@@ -132,7 +132,7 @@ async def download_random_from_recommendation(count: int = 5) -> dict:
     except Exception as e:
         logger.error(f"执行随机推荐下载时出错: {e}", exc_info=True)
         return {"ok": False, "error": f"执行随机推荐下载时发生错误: {e}"}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def search_illust(
@@ -143,7 +143,6 @@ async def search_illust(
     offset: int = 0,
     search_r18: bool = False
 ) -> dict:
- ) -> dict:
     """根据关键词搜索插画。可选择是否包含 R-18 内容。"""
     search_word = f"{word} R-18" if search_r18 else word
     json_result = await asyncio.to_thread(state.api.search_illust, search_word, search_target=search_target, sort=sort, duration=duration, offset=offset)
@@ -157,7 +156,7 @@ async def search_illust(
         
     summary_list = [format_illust_summary(illust) for illust in illusts]
     return {"ok": True, "illusts": illusts, "summary": summary_list, "word": search_word, "offset": offset}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def illust_detail(illust_id: int) -> dict:
@@ -167,7 +166,7 @@ async def illust_detail(illust_id: int) -> dict:
     if error:
         return {"ok": False, "error": error}
     return {"ok": True, "illust": json_result.get('illust', {})}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def illust_related(illust_id: int, offset: int = 0) -> dict:
@@ -183,7 +182,7 @@ async def illust_related(illust_id: int, offset: int = 0) -> dict:
     
     summary_list = [format_illust_summary(illust) for illust in illusts]
     return {"ok": True, "illusts": illusts, "summary": summary_list}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0) -> dict:
@@ -192,14 +191,14 @@ async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: 
     error = handle_api_error(json_result)
     if error:
         return {"ok": False, "error": error}
- 
+
     illusts = json_result.get('illusts', [])
     if not illusts:
         return {"ok": True, "illusts": [], "message": f"找不到模式为 '{mode}' 的排行榜结果。"}
- 
+
     summary_list = [f"第 {i+1+offset} 名: {format_illust_summary(illust)}" for i, illust in enumerate(illusts)]
     return {"ok": True, "illusts": illusts, "summary": summary_list, "mode": mode, "date": date, "offset": offset}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def search_user(word: str, offset: int = 0) -> dict:
@@ -215,7 +214,7 @@ async def search_user(word: str, offset: int = 0) -> dict:
     
     summary_list = [format_user_summary(user) for user in users]
     return {"ok": True, "users": users, "summary": summary_list, "word": word, "offset": offset}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
@@ -232,7 +231,7 @@ async def illust_recommended(offset: int = 0) -> dict:
         
     summary_list = [format_illust_summary(illust) for illust in illusts]
     return {"ok": True, "illusts": illusts, "summary": summary_list, "offset": offset}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 async def trending_tags_illust() -> dict:
@@ -248,7 +247,7 @@ async def trending_tags_illust() -> dict:
         
     tag_list = [f"- {tag.get('tag')} (翻译: {tag.get('translated_name', '无')})" for tag in trend_tags]
     return {"ok": True, "trend_tags": trend_tags, "summary": tag_list}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
@@ -265,7 +264,7 @@ async def illust_follow(restrict: str = "public", offset: int = 0) -> dict:
         
     summary_list = [format_illust_summary(illust) for illust in illusts]
     return {"ok": True, "illusts": illusts, "summary": summary_list, "restrict": restrict, "offset": offset}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
@@ -286,7 +285,7 @@ async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str =
         
     summary_list = [format_illust_summary(illust) for illust in illusts]
     return {"ok": True, "illusts": illusts, "summary": summary_list, "user_id": target_user_id, "restrict": restrict, "tag": tag, "max_bookmark_id": max_bookmark_id}
- 
+
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
