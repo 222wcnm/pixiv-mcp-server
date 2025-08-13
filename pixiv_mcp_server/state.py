@@ -19,7 +19,7 @@ class PixivState:
         
         # 下载任务状态跟踪
         self.download_tasks = {}
-
+        
         # 动图输出格式 (gif, webp)
         self.ugoira_format = "webp"
 
