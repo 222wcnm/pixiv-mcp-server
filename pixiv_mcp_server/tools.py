@@ -259,7 +259,7 @@ async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[
 @mcp.tool()
 @require_authentication
 async def download_random_from_recommendation(count: int = 5) -> dict:
-    """从用户的Pixiv推荐页随机下载N张插画。此为完成此类请求的最佳方式，会自动处理下载和动图转换。"""
+    """从用户的Pixiv推荐页随机下载N张插画 (需认证)。此为完成此类请求的最佳方式，会自动处理下载和动图转换。"""
     try:
         json_result = await state.api_client.illust_recommended()
         error = handle_api_error(json_result)
