@@ -373,7 +373,7 @@ async def search_user(word: str, offset: int = 0, view: str = "cards", limit: in
 @ensure_json_serializable
 @require_authentication
 async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取官方推荐插画的文本列表。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。"""
+    """获取官方推荐插画的文本列表 (需认证)。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。"""
     return await _api_tool_handler(
         "illust_recommended",
         offset=offset,
