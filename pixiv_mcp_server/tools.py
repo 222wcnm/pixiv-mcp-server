@@ -113,7 +113,7 @@ async def _api_tool_handler(
 
 @mcp.tool()
 async def next_page() -> dict:
-    """获取上一条指令结果的下一页内容。"""
+    """Fetches the next page of results from the previous command."""
     if not state.api_client:
         return {"ok": False, "error": "API 客户端尚未初始化，请检查认证状态。"}
     if not state.last_response or not state.last_response.get("next_url"):
@@ -173,7 +173,7 @@ async def next_page() -> dict:
 
 @mcp.tool()
 async def set_download_path(path: str) -> dict:
-    """设置图片和动图的默认本地保存位置。路径不存在时会自动创建。"""
+    """Sets the default local save path for images and ugoira. The path will be created automatically if it does not exist."""
     try:
         Path(path).mkdir(parents=True, exist_ok=True)
         state.download_path = path
@@ -185,7 +185,7 @@ async def set_download_path(path: str) -> dict:
 
 @mcp.tool()
 async def set_ugoira_format(format: str) -> dict:
-    """设置动图(Ugoira)转换后的文件格式。"""
+    """Sets the file format for converted ugoira (animated works)."""
     supported_formats = ["webp", "gif"]
     if format.lower() not in supported_formats:
         return {"ok": False, "error": f"不支持的格式 '{format}'", "supported_formats": supported_formats}
@@ -197,9 +197,7 @@ async def set_ugoira_format(format: str) -> dict:
 @mcp.tool()
 async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[int]] = None) -> dict:
     """
-    下载一个或多个指定ID的作品。此为异步后台操作。
-    该工具会为每个作品启动一个独立的后台下载任务，并返回这些任务的ID列表。
-    你可以使用 `get_download_status` 工具来查询每个任务的下载进度和结果。
+    Downloads one or more artworks by their IDs asynchronously in the background. Returns task IDs for tracking progress via `get_download_status`.
     """
     if not illust_id and not illust_ids:
         return {
@@ -235,8 +233,7 @@ async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[in
 @mcp.tool()
 async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[List[str]] = None) -> dict:
     """
-    查询一个或多个下载任务的当前状态。
-    如果不提供任何ID，将返回最近10个任务的摘要。
+    Queries the current status of one or more download tasks. If no IDs are provided, returns a summary of the most recent 10 tasks.
     """
     if not task_id and not task_ids:
         # 返回最近10个任务的摘要
@@ -259,7 +256,7 @@ async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[
 @mcp.tool()
 @require_authentication
 async def download_random_from_recommendation(count: int = 5) -> dict:
-    """从用户的Pixiv推荐页随机下载N张插画 (需认证)。此为完成此类请求的最佳方式，会自动处理下载和动图转换。"""
+    """Randomly downloads N illustrations from the user's Pixiv recommendation feed (Authentication required). Automatically handles downloading and ugoira conversion."""
     try:
         json_result = await state.api_client.illust_recommended()
         error = handle_api_error(json_result)
@@ -295,7 +292,7 @@ async def search_illust(
     view: str = "cards",
     limit: int = settings.default_limit
 ) -> dict:
-    """根据关键词搜索插画。可选择是否包含 R-18 内容。"""
+    """Searches for illustrations by keyword. You can choose whether to include R-18 content."""
     search_word = f"{word} R-18" if search_r18 else word
     return await _api_tool_handler(
         "search_illust",
@@ -314,7 +311,7 @@ async def search_illust(
 @mcp.tool()
 @ensure_json_serializable
 async def illust_detail(illust_id: int) -> dict:
-    """获取单张插画的详细信息。"""
+    """Retrieves detailed information for a single illustration."""
     json_result = await state.api_client.illust_detail(illust_id)
     error = handle_api_error(json_result)
     if error:
@@ -326,7 +323,7 @@ async def illust_detail(illust_id: int) -> dict:
 @mcp.tool()
 @ensure_json_serializable
 async def illust_related(illust_id: int, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取与指定插画相关的推荐作品。"""
+    """Gets recommended artworks related to the specified illustration."""
     return await _api_tool_handler(
         "illust_related",
         illust_id,
@@ -341,7 +338,7 @@ async def illust_related(illust_id: int, offset: int = 0, view: str = "cards", l
 @mcp.tool()
 @ensure_json_serializable
 async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取插画排行榜。"""
+    """Retrieves the illustration rankings."""
     return await _api_tool_handler(
         "illust_ranking",
         mode=mode,
@@ -357,7 +354,7 @@ async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: 
 @mcp.tool()
 @ensure_json_serializable
 async def search_user(word: str, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """搜索用户。"""
+    """Searches for users."""
     return await _api_tool_handler(
         "search_user",
         word,
@@ -373,7 +370,7 @@ async def search_user(word: str, offset: int = 0, view: str = "cards", limit: in
 @ensure_json_serializable
 @require_authentication
 async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取官方推荐插画的文本列表 (需认证)。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。"""
+    """Fetches a list of official recommended illustrations (Authentication required)."""
     return await _api_tool_handler(
         "illust_recommended",
         offset=offset,
@@ -387,7 +384,7 @@ async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = 
 @mcp.tool()
 @ensure_json_serializable
 async def trending_tags_illust() -> dict:
-    """获取当前的热门标签趋势。"""
+    """Gets the current trending tag trends."""
     json_result = await state.api_client.trending_tags_illust()
     error = handle_api_error(json_result)
     if error:
@@ -405,7 +402,7 @@ async def trending_tags_illust() -> dict:
 @ensure_json_serializable
 @require_authentication
 async def illust_follow(restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取已关注作者的最新作品（首页动态）(需要认证)。"""
+    """Fetches the latest works from followed artists (home feed) (Authentication required)."""
     return await _api_tool_handler(
         "illust_follow",
         restrict=restrict,
@@ -421,7 +418,7 @@ async def illust_follow(restrict: str = "public", offset: int = 0, view: str = "
 @ensure_json_serializable
 @require_authentication
 async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取用户的收藏列表 (需要认证)。"""
+    """Retrieves a user's bookmark list (Authentication required)."""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
         return {"ok": False, "error": "查询自己的收藏时，需要先认证以获取用户ID。"}
@@ -443,7 +440,7 @@ async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str =
 @ensure_json_serializable
 @require_authentication
 async def user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
-    """获取用户的关注列表 (需要认证)。"""
+    """Retrieves a user's following list (Authentication required)."""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
         return {"ok": False, "error": "查询自己的关注列表时，需要先认证以获取用户ID。"}
