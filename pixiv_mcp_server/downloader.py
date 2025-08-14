@@ -125,12 +125,19 @@ async def _sync_convert_ugoira(zip_path: str, frames: List[Dict], work_dir: str,
 
 async def _background_download_single(task_id: str, illust_id: int):
     """在背景下载单个作品，并应用智能存储和命名规则，同时更新任务状态。"""
+    if not state.api_client:
+        _update_task_status(task_id, "failed", "API 客户端尚未初始化，下载任务取消。")
+        return
+
     _update_task_status(task_id, "pending", f"任务已加入队列，等待处理。")
     
     async with state.download_semaphore:
         _update_task_status(task_id, "downloading", f"开始处理作品 ID {illust_id}。")
         try:
-            detail_result = await asyncio.to_thread(state.api.illust_detail, illust_id)
+            if not state.api_client:
+                _update_task_status(task_id, "failed", "API 客户端尚未初始化，下载任务取消。")
+                return
+            detail_result = await state.api_client.illust_detail(illust_id)
             error = handle_api_error(detail_result)
             if error:
                 _update_task_status(task_id, "failed", f"无法获取作品信息: {error}")
@@ -155,7 +162,7 @@ async def _background_download_single(task_id: str, illust_id: int):
                     return
                 
                 _update_task_status(task_id, "downloading", "正在获取动图元数据...")
-                metadata = await asyncio.to_thread(state.api.ugoira_metadata, illust_id)
+                metadata = await state.api_client.ugoira_metadata(illust_id)
                 error = handle_api_error(metadata)
                 if error:
                     _update_task_status(task_id, "failed", f"无法获取动图元数据: {error}")
@@ -166,7 +173,7 @@ async def _background_download_single(task_id: str, illust_id: int):
                 zip_path = save_path_base / zip_filename
                 
                 _update_task_status(task_id, "downloading", f"正在下载动图 .zip 文件...")
-                await asyncio.to_thread(state.api.download, zip_url, path=str(save_path_base))
+                await state.api_client.download(zip_url, path=str(save_path_base))
                 
                 output_format = state.ugoira_format
                 filename_base = _generate_filename(illust)
@@ -188,13 +195,13 @@ async def _background_download_single(task_id: str, illust_id: int):
                     file_ext = os.path.splitext(os.path.basename(urlparse(url).path))[1]
                     filename = _generate_filename(illust) + file_ext
                     final_path = save_path_base / filename
-                    await asyncio.to_thread(state.api.download, url, path=str(save_path_base), name=filename)
+                    await state.api_client.download(url, path=str(save_path_base), name=filename)
                 else:
                     for i, page in enumerate(illust['meta_pages']):
                         url = page['image_urls']['original']
                         file_ext = os.path.splitext(os.path.basename(urlparse(url).path))[1]
                         filename = _generate_filename(illust, page_num=i) + file_ext
-                        await asyncio.to_thread(state.api.download, url, path=str(save_path_base), name=filename)
+                        await state.api_client.download(url, path=str(save_path_base), name=filename)
                 
                 final_path = save_path_base
                 _update_task_status(task_id, "success", f"插画已成功下载至 {final_path}", {"final_path": str(final_path)})

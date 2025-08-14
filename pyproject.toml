@@ -18,6 +18,7 @@ dependencies = [
     "aiofiles>=23.0.0",
     "requests>=2.28.0",
     "python-dotenv>=1.0.0",
+    "pydantic-settings>=2.0.0",
 ]
 
 [project.urls]
@@ -30,6 +31,13 @@ pixiv-mcp-server = "pixiv_mcp_server.__main__:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pixiv_mcp_server*"]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "mypy",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]

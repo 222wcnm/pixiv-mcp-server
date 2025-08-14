@@ -1,71 +1,104 @@
 # Pixiv MCP Server
 
-> 一个功能强大的 Pixiv 工具集，通过模型上下文协议 (MCP) 为大语言模型（如 Claude / Cursor 等）提供浏览、搜索和下载 Pixiv 内容的能力。
+<p align="center">
+  <a href="https://github.com/222wcnm/pixiv-mcp-server">
+    <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python Version">
+  </a>
+  <a href="https://github.com/222wcnm/pixiv-mcp-server/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License">
+  </a>
+  <a href="https://github.com/222wcnm/pixiv-mcp-server/issues">
+    <img src="https://img.shields.io/github/issues/222wcnm/pixiv-mcp-server" alt="Issues">
+  </a>
+  <a href="https://github.com/222wcnm/pixiv-mcp-server/stargazers">
+    <img src="https://img.shields.io/github/stars/222wcnm/pixiv-mcp-server" alt="Stargazers">
+  </a>
+</p>
 
-## ✨ 主要功能
+<p align="center">
+  A powerful Pixiv toolkit that empowers Large Language Models (like Claude / Cursor) to browse, search, and download content from Pixiv via the Model Context Protocol (MCP). Now featuring a brand-new card-based view for a more intuitive interactive experience.
+</p>
 
-### 📥 下载与任务管理
-- `download(illust_id | illust_ids)`: 异步下载指定作品（支持单个或多个 ID），返回任务ID用于追踪。
-- `get_download_status(task_id | task_ids)`: 查询下载任务的实时状态（排队、下载中、成功、失败）。
-- `download_random_from_recommendation(count)`: 从个性化推荐中随机下载指定数量的作品。
-- `set_download_path(path)`: 自定义作品的本地保存路径。
-- `set_ugoira_format(format)`: 设定动图（Ugoira）保存的格式（`webp` 或 `gif`）。
-
-### 🔍 多维度搜索
-- `search_illust(word, ...)`: 根据关键词搜索插画。
-- `search_user(word)`: 搜索用户。
-- `trending_tags_illust()`: 获取当前的热门标签趋势。
-- `illust_ranking(mode)`: 获取插画排行榜（日榜/周榜/月榜等）。
-- `illust_related(illust_id)`: 获取相关推荐作品。
-- `illust_detail(illust_id)`: 获取单张插画的详细信息。
-
-### 👥 社区内容浏览
-- `illust_recommended()`: 获取官方推荐插画列表。
-- `illust_follow()`: 获取已关注作者的最新作品（需要认证）。
-- `user_bookmarks(user_id)`: 获取用户的收藏列表（需要认证）。
-- `user_following(user_id)`: 获取用户的关注列表（需要认证）。
-
-### 🔐 安全认证
-- 使用官方推荐的 OAuth 2.0 (PKCE) 流程，通过 `get_token.py` 脚本简化认证。
-- 服务器启动时会自动使用 `PIXIV_REFRESH_TOKEN` 环境变量进行认证。
+<p align="center">
+  <a href="README_zh-CN.md">简体中文</a>
+</p>
 
 ---
 
-## 🔧 环境要求
+## ✨ Key Features
 
-| 组件 | 版本要求 | 说明 |
-|------|----------|------|
-| Python | 3.10+ | 建议使用最新稳定版 |
-| FFmpeg | 最新版 | 可选，用于下载动图 (Ugoira) |
-| MCP 客户端 | - | 如 Claude for Desktop / Cursor |
+### 🛠️ General Tools
+- **`next_page()`**: Fetches the next page of results from the previous command.
+- **`set_download_path(path)`**: Customizes the local save path for artworks.
+- **`set_ugoira_format(format)`**: Sets the file format for animated works (Ugoira) (`webp` or `gif`).
 
-## 🚀 快速开始
+### 📥 Download Management
+- **`download(illust_id | illust_ids)`**: Asynchronously downloads specified artworks, returning task IDs for tracking.
+- **`get_download_status(task_id | task_ids)`**: Queries the real-time status of download tasks.
+- **`download_random_from_recommendation(count)`**: Randomly downloads artworks from personalized recommendations (Authentication required).
 
-### 步骤 1: 克隆或下载项目
+### 🔍 Search & Discovery
+- **`search_illust(word, ...)`**: Searches for illustrations by keyword.
+- **`search_user(word, ...)`**: Searches for users.
+- **`illust_ranking(mode, ...)`**: Retrieves illustration rankings (daily/weekly/monthly, etc.).
+- **`illust_related(illust_id, ...)`**: Gets recommended works related to a specific illustration.
+- **`illust_recommended(...)`**: Fetches official recommended illustrations (Authentication required).
+- **`trending_tags_illust()`**: Gets trending tags.
+- **`illust_detail(illust_id)`**: Retrieves detailed information for a single illustration.
+
+### 👥 Community & User
+- **`illust_follow(...)`**: Fetches the latest works from followed artists (Authentication required).
+- **`user_bookmarks(user_id_to_check, ...)`**: Retrieves a user's bookmark list (Authentication required).
+- **`user_following(user_id_to_check, ...)`**: Retrieves a user's following list (Authentication required).
+
+> **Note**: All search and browsing tools support `view` and `limit` parameters to control the output format and quantity. See the [Output Views](#-output-views) section for details.
+
+---
+
+## ⚙️ Output Views
+
+To enhance the user experience in AI conversations, this toolkit introduces a `view` parameter to control the output format:
+
+- **`view='cards'` (Default)**: Displays results as rich Markdown cards with embedded image previews. This is the recommended mode for its intuitive and visually appealing presentation.
+- **`view='raw'`**: Returns the raw, unprocessed JSON data. This mode is suitable for programmatic use or when results need to be piped into other tools.
+
+You can change the default view mode via the `DEFAULT_VIEW` environment variable.
+
+## 🔧 Requirements
+
+| Component      | Version | Notes                               |
+|----------------|---------|-------------------------------------|
+| **Python**     | `3.10+` | Latest stable version is recommended. |
+| **FFmpeg**     | Latest  | Optional, for downloading Ugoira.   |
+| **MCP Client** | -       | e.g., Claude for Desktop / Cursor.  |
+
+## 🚀 Quick Start
+
+### Step 1: Clone or Download the Project
 ```bash
 git clone https://github.com/222wcnm/pixiv-mcp-server.git
 cd pixiv-mcp-server
 ```
 
-### 步骤 2: 安装依赖 (推荐使用 uv)
+### Step 2: Install Dependencies (uv recommended)
 ```bash
-# 安装 uv (如果尚未安装)
+# Install uv (if not already installed)
 pip install uv
 
-# 创建虚拟环境并安装依赖
+# Create a virtual environment and install dependencies
 uv venv
 uv pip install -e .
 ```
 
-### 步骤 3: 获取认证 Token
-运行认证向导：
+### Step 3: Obtain Authentication Token
+Run the authentication wizard:
 ```bash
 python get_token.py
 ```
-> 成功后会自动创建 `.env` 配置文件（含 `PIXIV_REFRESH_TOKEN`）。
+> A `.env` file containing `PIXIV_REFRESH_TOKEN` will be created automatically upon success.
 
-### 步骤 4: 启动与配置
-在您的 MCP 客户端中，请使用以下配置。
+### Step 4: Launch and Configure
+In your MCP client, use the following configuration:
 ```json
 {
   "mcpServers": {
@@ -78,38 +111,42 @@ python get_token.py
         "pixiv-mcp-server"
       ],
       "env": {
-        "PIXIV_REFRESH_TOKEN": "从.env文件复制或留空自动读取",
+        "PIXIV_REFRESH_TOKEN": "Copy from .env file or leave empty to read automatically",
         "DOWNLOAD_PATH": "./downloads",
-        "FILENAME_TEMPLATE": "{author} - {title}_{id}"
+        "FILENAME_TEMPLATE": "{author} - {title}_{id}",
+        "DEFAULT_VIEW": "cards",
+        "DEFAULT_LIMIT": 10
       }
     }
   }
 }
 ```
-> 请将 `/path/to/your/pixiv-mcp-server` 替换为项目根目录的绝对路径。  
+> Please replace `/path/to/your/pixiv-mcp-server` with the absolute path to the project's root directory.
 
-## ⚙️ 环境变量配置
+## ⚙️ Environment Variables
 
-| 变量名 | 必需 | 描述 | 默认值 |
-|--------|------|------|--------|
-| `PIXIV_REFRESH_TOKEN` | ✅ | Pixiv API 认证令牌 | 无 |
-| `DOWNLOAD_PATH` | ❌ | 下载文件根目录 | `./downloads` |
-| `FILENAME_TEMPLATE` | ❌ | 文件命名模板 | `{author} - {title}_{id}` |
-| `WEBP_QUALITY` | ❌ | Ugoira 转 webp 时的质量 (0-100) | `80` |
-| `WEBP_PRESET` | ❌ | Ugoira 转 webp 的预设 (`default/picture/photo/drawing/icon/text`) | `default` |
-| `WEBP_LOSSLESS` | ❌ | Ugoira 转 webp 是否无损 (`0/1`) | `0` |
-| `GIF_PRESET` | ❌ | Ugoira 转 gif 的预设 | `ultrafast` |
-| `GIF_FPS` | ❌ | Ugoira 转 gif 的目标帧率 | 无 |
-| `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` | ❌ | 代理设置 | 依据系统/网络 |
+| Variable Name         | Required | Description                                     | Default Value             |
+|-----------------------|:--------:|-------------------------------------------------|---------------------------|
+| `PIXIV_REFRESH_TOKEN` | ✅       | Pixiv API authentication token.                 | `None`                    |
+| `DOWNLOAD_PATH`       | ❌       | Root directory for downloaded files.            | `./downloads`             |
+| `FILENAME_TEMPLATE`   | ❌       | File naming template.                           | `{author} - {title}_{id}` |
+| `DEFAULT_VIEW`        | ❌       | Default output view (`cards`/`raw`).            | `cards`                   |
+| `DEFAULT_LIMIT`       | ❌       | Default number of items for `cards` view.       | `10`                      |
+| `WEBP_QUALITY`        | ❌       | Ugoira to webp conversion quality (0-100).      | `80`                      |
+| `WEBP_PRESET`         | ❌       | Webp preset (`default`/`picture`/`photo`...).   | `default`                 |
+| `WEBP_LOSSLESS`       | ❌       | Webp lossless mode (`0`/`1`).                   | `0`                       |
+| `GIF_PRESET`          | ❌       | Ugoira to gif conversion preset.                | `ultrafast`               |
+| `GIF_FPS`             | ❌       | Target FPS for gif conversion.                  | `None`                    |
+| `HTTP_PROXY`, etc.    | ❌       | Proxy settings.                                 | System default            |
 
-## 🔗 相关资源
-- **FastMCP**: [MCP 服务器框架](https://github.com/jlowin/fastmcp)
-- **pixivpy3**: [Pixiv API Python 库](https://github.com/upbit/pixivpy)
-- **MCP 协议**: [模型上下文协议文档](https://modelcontextprotocol.io/)
+## 🔗 Related Resources
+- **FastMCP**: [MCP Server Framework](https://github.com/jlowin/fastmcp)
+- **pixivpy3**: [Pixiv API Python Library](https://github.com/upbit/pixivpy)
+- **MCP Protocol**: [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
 
-## ⚠️ 免责声明
-本工具旨在便于用户通过现代 AI 工具访问个人 Pixiv 账号内容。使用时请遵守 Pixiv 用户协议，并尊重版权和创作者权益。开发者对任何账号相关问题不承担责任。
+## ⚠️ Disclaimer
+This tool is intended to facilitate access to your personal Pixiv account content through modern AI tools. Please adhere to the Pixiv user agreement and respect copyright and creator rights. The developer assumes no responsibility for any account-related issues.
 
 ---
 
-> 🤖 本项目的代码和文档内容完全由人工智能生成。虽然已通过结构分析与功能测试，但仍可能存在不完善之处。欢迎提交 Issue/PR 改进体验。
+> 🤖 The code and documentation for this project were entirely generated by AI. While it has undergone structural analysis and functional testing, imperfections may still exist. Contributions via Issues/PRs to improve the experience are welcome.

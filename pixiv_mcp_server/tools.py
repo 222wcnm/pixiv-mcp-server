@@ -4,22 +4,172 @@ import logging
 import random
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from mcp.server.fastmcp import FastMCP
 
 from .downloader import _background_download_single
+from .config import settings
 from .state import state
 from .utils import (
+    _extract_card_from_illust,
+    _extract_card_from_user,
     format_illust_summary,
     format_user_summary,
     handle_api_error,
     require_authentication,
     ensure_json_serializable,
+    inject_proxy_urls_into_illust,
+    inject_proxy_urls_into_illust_list,
+    inject_proxy_profile_urls_into_user_previews,
+    inject_proxy_into_trend_tags,
+    structure_tool_response,
+    render_cards_to_markdown,
 )
 
 logger = logging.getLogger('pixiv-mcp-server')
 mcp = FastMCP("pixiv-server")
+
+
+async def _api_tool_handler(
+    api_method_name: str,
+    *args,
+    response_key: str,
+    view: str = "cards",
+    limit: int = settings.default_limit,
+    offset: Optional[int] = None,
+    error_message: str = "未能获取数据。",
+    not_found_message: str = "未找到任何内容。",
+    **kwargs,
+) -> dict:
+    """
+    一个通用的 API 工具处理器，用于简化工具函数的重复逻辑。
+    - 调用指定的 API 客户端方法
+    - 处理 API 错误
+    - 注入代理 URL
+    - 根据视图（view）参数决定是返回原始数据还是渲染后的 Markdown
+    """
+    if not state.api_client:
+        return {"ok": False, "error": "API 客户端尚未初始化，请检查认证状态。"}
+    # 调用 API
+    api_method = getattr(state.api_client, api_method_name)
+    json_result = await api_method(*args, **kwargs)
+    state.last_response = json_result  # 保存响应以供翻页
+    if "next_url" not in json_result and "next" in json_result:
+        json_result["next_url"] = json_result["next"]
+
+
+    # 统一错误处理
+    error = handle_api_error(json_result)
+    if error:
+        return {"ok": False, "error": f"{error_message}: {error}"}
+
+    # 提取数据
+    items = json_result.get(response_key, [])
+    if not items:
+        return {"ok": True, "cards": [], "message": not_found_message}
+
+    # 注入代理 URL
+    if response_key == "illusts":
+        inject_proxy_urls_into_illust_list(items)
+    elif response_key == "user_previews":
+        inject_proxy_profile_urls_into_user_previews(items)
+    elif response_key == "trend_tags":
+        inject_proxy_into_trend_tags(items)
+
+    # 根据视图参数决定输出
+    if view == "raw":
+        # 保持向后兼容的 'raw' 视图
+        result = {
+            "ok": True,
+            response_key: items,
+            "next": json_result.get("next_url")
+        }
+        if response_key == "illusts":
+            result["summary"] = [format_illust_summary(illust) for illust in items]
+        elif response_key == "user_previews":
+            result["summary"] = [format_user_summary(user) for user in items]
+        return result
+    else: # 默认为 'cards' 视图
+        title = kwargs.get("title", "作品列表")
+        show_nsfw = kwargs.get("search_r18", False)
+        
+        if response_key == "illusts":
+            cards = [_extract_card_from_illust(item) for item in items]
+        elif response_key == "user_previews":
+            cards = [_extract_card_from_user(item) for item in items]
+        else:
+            cards = items
+
+        markdown = render_cards_to_markdown(cards, title, show_nsfw, limit)
+        return {
+            "ok": True,
+            "markdown": markdown,
+            "card_count": len(items),
+            "display_count": min(len(items), limit),
+            "nsfw_filtered": not show_nsfw,
+        }
+
+
+@mcp.tool()
+async def next_page() -> dict:
+    """获取上一条指令结果的下一页内容。"""
+    if not state.api_client:
+        return {"ok": False, "error": "API 客户端尚未初始化，请检查认证状态。"}
+    if not state.last_response or not state.last_response.get("next_url"):
+        return {"ok": False, "error": "没有可供翻页的上一条指令。"}
+    
+    next_url = state.last_response["next_url"]
+    
+    # 从 next_url 中提取 response_key
+    response_key = "illusts" # 默认值
+    if "users" in next_url:
+        response_key = "user_previews"
+    elif "illust" in next_url:
+        response_key = "illusts"
+
+    # 调用 next_page API
+    response = await state.api_client.next_page(next_url)
+    json_result = response.json()
+    state.last_response = json_result
+
+    # 统一错误处理
+    error = handle_api_error(json_result)
+    if error:
+        return {"ok": False, "error": f"获取下一页失败: {error}"}
+
+    # 提取数据
+    items = json_result.get(response_key, [])
+    if not items:
+        return {"ok": True, "cards": [], "message": "没有更多内容了。"}
+
+    # 注入代理 URL
+    if response_key == "illusts":
+        inject_proxy_urls_into_illust_list(items)
+    elif response_key == "user_previews":
+        inject_proxy_profile_urls_into_user_previews(items)
+
+    # 渲染 Markdown
+    title = "下一页"
+    show_nsfw = False # 默认为 False
+    limit = settings.default_limit
+    
+    if response_key == "illusts":
+        cards = [_extract_card_from_illust(item) for item in items]
+    elif response_key == "user_previews":
+        cards = [_extract_card_from_user(item) for item in items]
+    else:
+        cards = items
+
+    markdown = render_cards_to_markdown(cards, title, show_nsfw, limit)
+    return {
+        "ok": True,
+        "markdown": markdown,
+        "card_count": len(items),
+        "display_count": min(len(items), limit),
+        "nsfw_filtered": not show_nsfw,
+    }
+
 
 @mcp.tool()
 async def set_download_path(path: str) -> dict:
@@ -111,7 +261,7 @@ async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[
 async def download_random_from_recommendation(count: int = 5) -> dict:
     """从用户的Pixiv推荐页随机下载N张插画。此为完成此类请求的最佳方式，会自动处理下载和动图转换。"""
     try:
-        json_result = await asyncio.to_thread(state.api.illust_recommended)
+        json_result = await state.api_client.illust_recommended()
         error = handle_api_error(json_result)
         if error:
             return {"ok": False, "error": f"获取推荐列表失败: {error}"}
@@ -141,107 +291,110 @@ async def search_illust(
     sort: str = "date_desc", 
     duration: Optional[str] = None, 
     offset: int = 0,
-    search_r18: bool = False
+    search_r18: bool = False,
+    view: str = "cards",
+    limit: int = settings.default_limit
 ) -> dict:
     """根据关键词搜索插画。可选择是否包含 R-18 内容。"""
     search_word = f"{word} R-18" if search_r18 else word
-    json_result = await asyncio.to_thread(state.api.search_illust, search_word, search_target=search_target, sort=sort, duration=duration, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": f"抱歉，根据您提供的关键词 '{search_word}'，未能找到相关的插画。"}
-        
-    summary_list = [format_illust_summary(illust) for illust in illusts]
-    return {"ok": True, "illusts": illusts, "summary": summary_list, "word": search_word, "offset": offset}
+    return await _api_tool_handler(
+        "search_illust",
+        search_word,
+        search_target=search_target,
+        sort=sort,
+        duration=duration,
+        offset=offset,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message=f"搜索 '{search_word}' 失败",
+        not_found_message=f"未能找到与 '{search_word}' 相关的插画。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
 async def illust_detail(illust_id: int) -> dict:
     """获取单张插画的详细信息。"""
-    json_result = await asyncio.to_thread(state.api.illust_detail, illust_id)
+    json_result = await state.api_client.illust_detail(illust_id)
     error = handle_api_error(json_result)
     if error:
         return {"ok": False, "error": error}
-    return {"ok": True, "illust": json_result.get('illust', {})}
+    illust = json_result.get('illust', {})
+    inject_proxy_urls_into_illust(illust)
+    return {"ok": True, "illust": illust}
 
 @mcp.tool()
 @ensure_json_serializable
-async def illust_related(illust_id: int, offset: int = 0) -> dict:
+async def illust_related(illust_id: int, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取与指定插画相关的推荐作品。"""
-    json_result = await asyncio.to_thread(state.api.illust_related, illust_id, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": f"找不到与插画 {illust_id} 相关的推荐。"}
-    
-    summary_list = [format_illust_summary(illust) for illust in illusts]
-    return {"ok": True, "illusts": illusts, "summary": summary_list}
+    return await _api_tool_handler(
+        "illust_related",
+        illust_id,
+        offset=offset,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message=f"获取插画 {illust_id} 的相关推荐失败",
+        not_found_message=f"找不到与插画 {illust_id} 相关的推荐。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
-async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0) -> dict:
+async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取插画排行榜。"""
-    json_result = await asyncio.to_thread(state.api.illust_ranking, mode=mode, date=date, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": f"找不到模式为 '{mode}' 的排行榜结果。"}
-
-    summary_list = [f"第 {i+1+offset} 名: {format_illust_summary(illust)}" for i, illust in enumerate(illusts)]
-    return {"ok": True, "illusts": illusts, "summary": summary_list, "mode": mode, "date": date, "offset": offset}
+    return await _api_tool_handler(
+        "illust_ranking",
+        mode=mode,
+        date=date,
+        offset=offset,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message=f"获取 '{mode}' 排行榜失败",
+        not_found_message=f"找不到模式为 '{mode}' 的排行榜结果。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
-async def search_user(word: str, offset: int = 0) -> dict:
+async def search_user(word: str, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """搜索用户。"""
-    json_result = await asyncio.to_thread(state.api.search_user, word, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    users = json_result.get('user_previews', [])
-    if not users:
-        return {"ok": True, "users": [], "message": f"抱歉，未能找到名为 '{word}' 的用户。"}
-    
-    summary_list = [format_user_summary(user) for user in users]
-    return {"ok": True, "users": users, "summary": summary_list, "word": word, "offset": offset}
+    return await _api_tool_handler(
+        "search_user",
+        word,
+        offset=offset,
+        response_key="user_previews",
+        view=view,
+        limit=limit,
+        error_message=f"搜索用户 '{word}' 失败",
+        not_found_message=f"未能找到名为 '{word}' 的用户。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
-async def illust_recommended(offset: int = 0) -> dict:
+async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取官方推荐插画的文本列表。注意：此工具只返回作品信息，不执行下载。如需下载，请使用'download_random_from_recommendation'工具。"""
-    json_result = await asyncio.to_thread(state.api.illust_recommended, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": "暂无推荐内容。"}
-        
-    summary_list = [format_illust_summary(illust) for illust in illusts]
-    return {"ok": True, "illusts": illusts, "summary": summary_list, "offset": offset}
+    return await _api_tool_handler(
+        "illust_recommended",
+        offset=offset,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message="获取官方推荐失败",
+        not_found_message="暂无推荐内容。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
 async def trending_tags_illust() -> dict:
     """获取当前的热门标签趋势。"""
-    json_result = await asyncio.to_thread(state.api.trending_tags_illust)
+    json_result = await state.api_client.trending_tags_illust()
     error = handle_api_error(json_result)
     if error:
         return {"ok": False, "error": error}
     
     trend_tags = json_result.get('trend_tags', [])
+    inject_proxy_into_trend_tags(trend_tags)
     if not trend_tags:
         return {"ok": True, "trend_tags": [], "message": "无法获取热门标签。"}
         
@@ -251,58 +404,58 @@ async def trending_tags_illust() -> dict:
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
-async def illust_follow(restrict: str = "public", offset: int = 0) -> dict:
+async def illust_follow(restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取已关注作者的最新作品（首页动态）(需要认证)。"""
-    json_result = await asyncio.to_thread(state.api.illust_follow, restrict=restrict, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": "您的关注动态中暂时没有新作品。"}
-        
-    summary_list = [format_illust_summary(illust) for illust in illusts]
-    return {"ok": True, "illusts": illusts, "summary": summary_list, "restrict": restrict, "offset": offset}
+    return await _api_tool_handler(
+        "illust_follow",
+        restrict=restrict,
+        offset=offset,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message="获取关注动态失败",
+        not_found_message="您的关注动态中暂时没有新作品。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
-async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None) -> dict:
+async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取用户的收藏列表 (需要认证)。"""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
-         return {"ok": False, "error": "查询自己的收藏时，需要先认证以获取用户ID。"}
+        return {"ok": False, "error": "查询自己的收藏时，需要先认证以获取用户ID。"}
 
-    json_result = await asyncio.to_thread(state.api.user_bookmarks_illust, target_user_id, restrict=restrict, tag=tag, max_bookmark_id=max_bookmark_id)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    illusts = json_result.get('illusts', [])
-    if not illusts:
-        return {"ok": True, "illusts": [], "message": f"找不到用户 {target_user_id} 的收藏。", "user_id": target_user_id}
-        
-    summary_list = [format_illust_summary(illust) for illust in illusts]
-    return {"ok": True, "illusts": illusts, "summary": summary_list, "user_id": target_user_id, "restrict": restrict, "tag": tag, "max_bookmark_id": max_bookmark_id}
+    return await _api_tool_handler(
+        "user_bookmarks_illust",
+        target_user_id,
+        restrict=restrict,
+        tag=tag,
+        max_bookmark_id=max_bookmark_id,
+        response_key="illusts",
+        view=view,
+        limit=limit,
+        error_message=f"获取用户 {target_user_id} 的收藏失败",
+        not_found_message=f"找不到用户 {target_user_id} 的收藏。",
+    )
 
 @mcp.tool()
 @ensure_json_serializable
 @require_authentication
-async def user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0) -> dict:
+async def user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """获取用户的关注列表 (需要认证)。"""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
-         return {"ok": False, "error": "查询自己的关注列表时，需要先认证以获取用户ID。"}
+        return {"ok": False, "error": "查询自己的关注列表时，需要先认证以获取用户ID。"}
 
-    json_result = await asyncio.to_thread(state.api.user_following, target_user_id, restrict=restrict, offset=offset)
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": error}
-    
-    users = json_result.get('user_previews', [])
-    if not users:
-        return {"ok": True, "users": [], "message": f"用户 {target_user_id} 没有关注任何人。", "user_id": target_user_id}
-        
-    summary_list = [format_user_summary(user) for user in users]
-    return {"ok": True, "users": users, "summary": summary_list, "user_id": target_user_id, "restrict": restrict, "offset": offset}
+    return await _api_tool_handler(
+        "user_following",
+        target_user_id,
+        restrict=restrict,
+        offset=offset,
+        response_key="user_previews",
+        view=view,
+        limit=limit,
+        error_message=f"获取用户 {target_user_id} 的关注列表失败",
+        not_found_message=f"用户 {target_user_id} 没有关注任何人。",
+    )

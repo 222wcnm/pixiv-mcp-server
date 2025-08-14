@@ -1,6 +1,8 @@
 import logging
 import os
 import urllib3
+import json
+from pathlib import Path
 from dotenv import load_dotenv
 
 def setup_environment():
@@ -17,6 +19,7 @@ def setup_environment():
         'DOWNLOAD_PATH',
         'FILENAME_TEMPLATE',
         'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+        'PREVIEW_PROXY_ENABLED', 'PREVIEW_PROXY_HOST', 'PREVIEW_PROXY_PORT',
     }
     # 快照环境，避免遍历过程中修改带来的副作用
     env_snapshot = dict(os.environ)
@@ -82,6 +85,15 @@ def main():
     from .state import state
     from .downloader import HAS_FFMPEG
     from .tools import mcp
+    from .api_client import initialize_api_client
+    
+    # 启动本地预览代理（后台线程）
+    if state.preview_proxy_enabled:
+        try:
+            from .preview_proxy import start_preview_proxy
+            start_preview_proxy(state.preview_proxy_host, state.preview_proxy_port)
+        except Exception as e:
+            logger.warning(f"预览代理启动失败: {e}")
 
     # 步骤 3: 初始化应用
     os.makedirs(state.download_path, exist_ok=True)
@@ -91,20 +103,35 @@ def main():
     logger.info(f"默认下载路径: {state.download_path}")
     logger.info(f"文件名模板: {state.filename_template}")
     logger.info(f"FFmpeg支持: {'是' if HAS_FFMPEG else '否'}")
+    logger.info(
+        f"预览代理: {'启用' if state.preview_proxy_enabled else '禁用'}" +
+        ("" if not state.preview_proxy_enabled else f" (http://{state.preview_proxy_host}:{state.preview_proxy_port}/pximg?url=...)")
+    )
 
     # 步骤 4: 自动认证
+    auth_file = Path("auth.json")
+    if auth_file.exists():
+        with open(auth_file, "r") as f:
+            auth_info = json.load(f)
+            state.refresh_token = auth_info.get("refresh_token")
+
     if state.refresh_token:
-        logger.info("正在尝试使用环境变量中的 PIXIV_REFRESH_TOKEN 自动认证...")
+        logger.info("正在尝试使用 refresh_token 自动认证...")
         try:
             state.api.auth(refresh_token=state.refresh_token)
             state.is_authenticated = True
             state.user_id = state.api.user_id
+            initialize_api_client()  # 在这里初始化 API Client
             logger.info(f"自动认证成功，用户ID: {state.user_id}")
+            
+            # 保存新的 refresh_token
+            with open(auth_file, "w") as f:
+                json.dump({"refresh_token": state.api.refresh_token}, f)
         except Exception as e:
             logger.warning(f"自动认证失败: {e}")
             logger.warning("请检查您的 REFRESH_TOKEN 是否有效或网络连接/代理设置是否正确。")
     else:
-        logger.info("未找到 PIXIV_REFRESH_TOKEN，需要手动使用 auth 工具进行认证。")
+        logger.info("未找到 refresh_token，需要手动使用 auth 工具进行认证。")
 
     # 步骤 5: 运行服务器
     mcp.run(transport="stdio")
