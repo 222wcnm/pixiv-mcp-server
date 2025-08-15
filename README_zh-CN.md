@@ -29,13 +29,11 @@
 
 ### 🛠️ 通用工具
 - **`next_page()`**: 获取上一条指令结果的下一页内容。
-- **`set_download_path(path)`**: 自定义作品的本地保存路径。
-- **`set_ugoira_format(format)`**: 设定动图(Ugoira)保存格式 (`webp` 或 `gif`)。
+- **`update_setting(key, value)`**: 在运行时更新服务器配置 (例如 `download_path`)。
 
 ### 📥 下载管理
 - **`download(illust_id | illust_ids)`**: 异步下载指定作品，返回任务ID用于追踪。
-- **`get_download_status(task_id | task_ids)`**: 查询下载任务的实时状态。
-- **`download_random_from_recommendation(count)`**: 从个性化推荐中随机下载作品 (需认证)。
+- **`manage_download_tasks(task_id, action)`**: 管理下载任务。支持 `status` 和 `cancel` 操作。
 
 ### 🔍 搜索与发现
 - **`search_illust(word, ...)`**: 根据关键词搜索插画。
@@ -95,7 +93,7 @@ uv pip install -e .
 ```bash
 python get_token.py
 ```
-> 成功后会自动创建 `.env` 配置文件（含 `PIXIV_REFRESH_TOKEN`）。
+> 成功后会自动创建或更新 `.env` 配置文件（含 `PIXIV_REFRESH_TOKEN`）。
 
 ### 步骤 4: 启动与配置
 在您的 MCP 客户端中，请使用以下配置。

@@ -29,13 +29,11 @@
 
 ### 🛠️ General Tools
 - **`next_page()`**: Fetches the next page of results from the previous command.
-- **`set_download_path(path)`**: Customizes the local save path for artworks.
-- **`set_ugoira_format(format)`**: Sets the file format for animated works (Ugoira) (`webp` or `gif`).
+- **`update_setting(key, value)`**: Updates the server configuration at runtime (e.g., `download_path`).
 
 ### 📥 Download Management
 - **`download(illust_id | illust_ids)`**: Asynchronously downloads specified artworks, returning task IDs for tracking.
-- **`get_download_status(task_id | task_ids)`**: Queries the real-time status of download tasks.
-- **`download_random_from_recommendation(count)`**: Randomly downloads artworks from personalized recommendations (Authentication required).
+- **`manage_download_tasks(task_id, action)`**: Manages download tasks. Supports `status` and `cancel` actions.
 
 ### 🔍 Search & Discovery
 - **`search_illust(word, ...)`**: Searches for illustrations by keyword.
@@ -95,7 +93,7 @@ Run the authentication wizard:
 ```bash
 python get_token.py
 ```
-> A `.env` file containing `PIXIV_REFRESH_TOKEN` will be created automatically upon success.
+> A `.env` file containing `PIXIV_REFRESH_TOKEN` will be created or updated automatically upon success.
 
 ### Step 4: Launch and Configure
 In your MCP client, use the following configuration:

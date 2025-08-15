@@ -102,28 +102,30 @@ class PixivTokenGenerator:
 # --- 辅助函数 ---
 
 def create_or_update_env_file(refresh_token: str):
-    """更新 .env 文件中的 Refresh Token，并保留其他已有配置。"""
+    """安全地创建或更新 .env 文件，只修改 PIXIV_REFRESH_TOKEN。"""
     env_path = Path(".env")
-    env_content = []
     token_line = f"PIXIV_REFRESH_TOKEN={refresh_token}"
-    found = False
-    config_exists = env_path.exists()
-
-    if config_exists:
+    
+    if env_path.exists():
         try:
-            with env_path.open('r', encoding='utf-8') as f:
-                for line in f:
-                    if line.strip().startswith("PIXIV_REFRESH_TOKEN="):
-                        env_content.append(token_line + '\n')
-                        found = True
-                    else:
-                        env_content.append(line)
+            lines = env_path.read_text(encoding='utf-8').splitlines()
+            found = False
+            for i, line in enumerate(lines):
+                if line.strip().startswith("PIXIV_REFRESH_TOKEN="):
+                    lines[i] = token_line
+                    found = True
+                    break
+            if not found:
+                lines.insert(0, token_line)
+            
+            env_path.write_text('\n'.join(lines), encoding='utf-8')
+            print(f"\n✅ 配置文件已成功更新！")
+            print(f"   📁 文件路径: {env_path.resolve()}")
         except Exception as e:
-            print(f"⚠️ 读取现有配置文件失败: {e}, 将创建新文件")
-
-    if not found:
-        if not config_exists or not env_content:
-            env_content = [
+            print(f"\n❌ 更新 .env 文件失败: {e}")
+    else:
+        try:
+            content = [
                 "# [核心] Pixiv API 认证令牌 (必须)\n",
                 f"{token_line}\n\n",
                 "# [功能] 文件下载路径 (可选, 默认为 './downloads')\n",
@@ -133,18 +135,11 @@ def create_or_update_env_file(refresh_token: str):
                 "# [网络] 代理服务器设置 (可选, 默认禁用)\n",
                 "# https_proxy=http://127.0.0.1:7890\n"
             ]
-        else:
-            env_content.insert(0, f"{token_line}\n\n")
-
-    try:
-        with env_path.open('w', encoding='utf-8') as f:
-            f.writelines(env_content)
-        abs_path = os.path.abspath(env_path)
-        print(f"\n✅ 配置文件已成功 {'更新' if config_exists else '创建'}!")
-        print(f"   📁 文件路径: {abs_path}")
-        print(f"   🔑 Refresh Token 已设置。")
-    except Exception as e:
-        print(f"\n❌ 写入配置文件失败: {e}")
+            env_path.write_text(''.join(content), encoding='utf-8')
+            print(f"\n✅ 配置文件已成功创建！")
+            print(f"   📁 文件路径: {env_path.resolve()}")
+        except Exception as e:
+            print(f"\n❌ 创建 .env 文件失败: {e}")
 
 def get_existing_refresh_token() -> Optional[str]:
     """检查现有的.env文件并返回Refresh Token。"""
@@ -283,8 +278,7 @@ def refresh_token_flow(generator: PixivTokenGenerator):
         token_response = generator.refresh_existing_token(current_token)
         if 'refresh_token' in token_response:
             new_refresh_token = token_response['refresh_token']
-            print(f"\n🎉 成功刷新！这是您的新 Refresh Token:")
-            print(f"🔑 {new_refresh_token}")
+            print(f"\n🎉 成功刷新！")
             create_or_update_env_file(new_refresh_token)
         else:
             print("\n❌ 刷新 Token 失败:")

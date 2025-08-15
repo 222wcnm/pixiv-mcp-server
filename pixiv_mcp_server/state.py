@@ -33,6 +33,7 @@ class PixivState:
         
         # 上一次API响应，用于分页
         self.last_response = {}
+        self.last_response_key: Optional[str] = None
 
         # 动图输出格式 (gif, webp)
         self.ugoira_format = settings.ugoira_format

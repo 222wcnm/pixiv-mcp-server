@@ -86,6 +86,9 @@ def main():
     from .downloader import HAS_FFMPEG
     from .tools import mcp
     from .api_client import initialize_api_client
+
+    # 步骤 3: 无论认证状态如何，都先初始化API客户端以支持匿名访问
+    initialize_api_client()
     
     # 启动本地预览代理（后台线程）
     if state.preview_proxy_enabled:
@@ -108,30 +111,22 @@ def main():
         ("" if not state.preview_proxy_enabled else f" (http://{state.preview_proxy_host}:{state.preview_proxy_port}/pximg?url=...)")
     )
 
-    # 步骤 4: 自动认证
-    auth_file = Path("auth.json")
-    if auth_file.exists():
-        with open(auth_file, "r") as f:
-            auth_info = json.load(f)
-            state.refresh_token = auth_info.get("refresh_token")
-
+    # 步骤 4: 自动认证 (仅依赖环境变量或.env文件)
     if state.refresh_token:
-        logger.info("正在尝试使用 refresh_token 自动认证...")
+        logger.info("检测到 refresh_token，正在尝试自动认证...")
         try:
+            # 注意：这里的 state.api 是在 initialize_api_client 中创建的
             state.api.auth(refresh_token=state.refresh_token)
             state.is_authenticated = True
             state.user_id = state.api.user_id
-            initialize_api_client()  # 在这里初始化 API Client
-            logger.info(f"自动认证成功，用户ID: {state.user_id}")
-            
-            # 保存新的 refresh_token
-            with open(auth_file, "w") as f:
-                json.dump({"refresh_token": state.api.refresh_token}, f)
+            logger.info(f"自动认证成功！用户ID: {state.user_id}")
         except Exception as e:
+            state.is_authenticated = False
             logger.warning(f"自动认证失败: {e}")
-            logger.warning("请检查您的 REFRESH_TOKEN 是否有效或网络连接/代理设置是否正确。")
+            logger.warning("将以匿名模式运行。请检查 REFRESH_TOKEN 是否有效或网络/代理设置。")
     else:
-        logger.info("未找到 refresh_token，需要手动使用 auth 工具进行认证。")
+        state.is_authenticated = False
+        logger.info("未在环境中找到 refresh_token，将以匿名模式运行。")
 
     # 步骤 5: 运行服务器
     mcp.run(transport="stdio")

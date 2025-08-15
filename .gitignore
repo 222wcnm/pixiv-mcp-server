@@ -1,5 +1,6 @@
 # 排除敏感配置
 .env
+auth.json
 
 # 排除下载目录
 downloads/

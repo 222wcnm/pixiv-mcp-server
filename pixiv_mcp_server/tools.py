@@ -52,11 +52,18 @@ async def _api_tool_handler(
     if not state.api_client:
         return {"ok": False, "error": "API 客户端尚未初始化，请检查认证状态。"}
     # 调用 API
-    api_method = getattr(state.api_client, api_method_name)
-    json_result = await api_method(*args, **kwargs)
-    state.last_response = json_result  # 保存响应以供翻页
-    if "next_url" not in json_result and "next" in json_result:
-        json_result["next_url"] = json_result["next"]
+    try:
+        api_method = getattr(state.api_client, api_method_name)
+        if offset is not None:
+            kwargs['offset'] = offset
+        json_result = await api_method(*args, **kwargs)
+        state.last_response = json_result  # 保存响应以供翻页
+        state.last_response_key = response_key # 保存响应类型以供翻页
+        if "next_url" not in json_result and "next" in json_result:
+            json_result["next_url"] = json_result["next"]
+    except Exception as e:
+        logger.error(f"调用 API 方法 {api_method_name} 时出错: {e}", exc_info=True)
+        return {"ok": False, "error": f"{error_message}: 调用 API 时发生异常: {e}"}
 
 
     # 统一错误处理
@@ -121,17 +128,16 @@ async def next_page() -> dict:
     
     next_url = state.last_response["next_url"]
     
-    # 从 next_url 中提取 response_key
-    response_key = "illusts" # 默认值
-    if "users" in next_url:
-        response_key = "user_previews"
-    elif "illust" in next_url:
-        response_key = "illusts"
+    # 从 state 中安全地获取 response_key
+    response_key = state.last_response_key
+    if not response_key:
+        return {"ok": False, "error": "无法确定上一条指令的响应类型，无法翻页。"}
 
     # 调用 next_page API
     response = await state.api_client.next_page(next_url)
     json_result = response.json()
     state.last_response = json_result
+    state.last_response_key = response_key # 保持 key 的传递
 
     # 统一错误处理
     error = handle_api_error(json_result)
@@ -171,28 +177,6 @@ async def next_page() -> dict:
     }
 
 
-@mcp.tool()
-async def set_download_path(path: str) -> dict:
-    """Sets the default local save path for images and ugoira. The path will be created automatically if it does not exist."""
-    try:
-        Path(path).mkdir(parents=True, exist_ok=True)
-        state.download_path = path
-        logger.info(f"下载路径已更新为: {state.download_path}")
-        return {"ok": True, "message": f"下载路径已成功更新为: {path}", "download_path": state.download_path}
-    except Exception as e:
-        logger.error(f"设置下载路径失败: {e}")
-        return {"ok": False, "error": f"无法设置下载路径: {e}", "path": path}
-
-@mcp.tool()
-async def set_ugoira_format(format: str) -> dict:
-    """Sets the file format for converted ugoira (animated works)."""
-    supported_formats = ["webp", "gif"]
-    if format.lower() not in supported_formats:
-        return {"ok": False, "error": f"不支持的格式 '{format}'", "supported_formats": supported_formats}
-    
-    state.ugoira_format = format.lower()
-    logger.info(f"动图输出格式已更新为: {state.ugoira_format}")
-    return {"ok": True, "ugoira_format": state.ugoira_format}
 
 @mcp.tool()
 async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[int]] = None) -> dict:
@@ -231,54 +215,107 @@ async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[in
     }
 
 @mcp.tool()
-async def get_download_status(task_id: Optional[str] = None, task_ids: Optional[List[str]] = None) -> dict:
+async def manage_download_tasks(
+    task_id: Optional[str] = None, 
+    task_ids: Optional[List[str]] = None,
+    action: str = "status"
+) -> dict:
     """
-    Queries the current status of one or more download tasks. If no IDs are provided, returns a summary of the most recent 10 tasks.
+    Manages download tasks. The default action is to query the status.
+    - action='status': Queries the status of one or more tasks. If no ID is provided, it displays the 10 most recent tasks.
+    - action='cancel': Cancels one or more tasks that are currently queued or downloading.
     """
-    if not task_id and not task_ids:
-        # 返回最近10个任务的摘要
-        recent_tasks = dict(sorted(state.download_tasks.items(), key=lambda item: item[1].get('updated_at', 0), reverse=True)[:10])
-        if not recent_tasks:
-            return {"ok": True, "tasks": {}, "message": "当前没有活动的下载任务。"}
-        return {"ok": True, "tasks": recent_tasks}
-
     id_list = []
     if task_id:
         id_list.append(task_id)
     if task_ids:
         id_list.extend(task_ids)
+
+    if action == "status":
+        if not id_list:
+            # 返回最近10个任务的摘要
+            recent_tasks = dict(sorted(state.download_tasks.items(), key=lambda item: item[1].get('updated_at', 0), reverse=True)[:10])
+            if not recent_tasks:
+                return {"ok": True, "tasks": {}, "message": "当前没有活动的下载任务。"}
+            return {"ok": True, "tasks": recent_tasks}
+        
+        results = {}
+        for an_id in id_list:
+            results[an_id] = state.download_tasks.get(an_id, {"status": "not_found", "message": "未找到指定的任务ID。"})
+        return {"ok": True, "tasks": results}
+
+    elif action == "cancel":
+        if not id_list:
+            return {"ok": False, "error": "必须提供 task_id 或 task_ids 来取消任务。"}
+        
+        cancelled_count = 0
+        not_found_count = 0
+        results = {}
+        for an_id in id_list:
+            task = state.download_tasks.get(an_id)
+            if not task:
+                not_found_count += 1
+                results[an_id] = {"status": "not_found"}
+                continue
+            
+            if task["status"] in ["queued", "downloading"]:
+                task["status"] = "cancelled"
+                task["message"] = "任务已被用户取消。"
+                cancelled_count += 1
+                results[an_id] = {"status": "cancelled"}
+            else:
+                results[an_id] = {"status": task["status"], "message": "任务已完成或失败，无法取消。"}
+
+        return {
+            "ok": True, 
+            "message": f"操作完成。成功取消 {cancelled_count} 个任务，{not_found_count} 个任务未找到。",
+            "results": results
+        }
     
-    results = {}
-    for an_id in id_list:
-        results[an_id] = state.download_tasks.get(an_id, {"status": "not_found", "message": "未找到指定的任务ID。"})
-    return {"ok": True, "tasks": results}
+    else:
+        return {"ok": False, "error": f"不支持的操作: '{action}'", "supported_actions": ["status", "cancel"]}
 
 @mcp.tool()
-@require_authentication
-async def download_random_from_recommendation(count: int = 5) -> dict:
-    """Randomly downloads N illustrations from the user's Pixiv recommendation feed (Authentication required). Automatically handles downloading and ugoira conversion."""
+async def update_setting(key: str, value: Any) -> dict:
+    """
+    Updates the server configuration at runtime.
+    Supported 'key' values include: 'download_path', 'ugoira_format', 'filename_template'.
+    """
+    supported_keys = {
+        "download_path": str,
+        "ugoira_format": str,
+        "filename_template": str,
+    }
+
+    if key not in supported_keys:
+        return {"ok": False, "error": f"不支持的配置项: '{key}'", "supported_keys": list(supported_keys.keys())}
+
+    # 类型校验
+    expected_type = supported_keys[key]
+    if not isinstance(value, expected_type):
+        return {"ok": False, "error": f"配置项 '{key}' 的值类型错误。期望类型: {expected_type.__name__}, 实际类型: {type(value).__name__}"}
+
+    # 特定值的合法性校验
+    if key == "ugoira_format":
+        supported_formats = ["webp", "gif"]
+        if value.lower() not in supported_formats:
+            return {"ok": False, "error": f"不支持的动图格式 '{value}'", "supported_formats": supported_formats}
+        value = value.lower()
+    
+    if key == "download_path":
+        try:
+            Path(value).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"创建下载路径 '{value}' 失败: {e}")
+            return {"ok": False, "error": f"无法创建或访问指定的下载路径: {e}"}
+
     try:
-        json_result = await state.api_client.illust_recommended()
-        error = handle_api_error(json_result)
-        if error:
-            return {"ok": False, "error": f"获取推荐列表失败: {error}"}
-
-        illusts = json_result.get('illusts', [])
-        if not illusts:
-            return {"ok": False, "error": "无法获取推荐内容，列表为空。"}
-        
-        if len(illusts) < count:
-            logger.warning(f"推荐列表数量 ({len(illusts)}) 小于要求数量 ({count})，将下载所有可用的插画。")
-            count = len(illusts)
-
-        random_illusts = random.sample(illusts, count)
-        ids_to_download = [illust['id'] for illust in random_illusts]
-        
-        return await download(illust_ids=ids_to_download)
-        
+        setattr(state, key, value)
+        logger.info(f"配置项 '{key}' 已更新为: {value}")
+        return {"ok": True, "message": f"配置 '{key}' 已成功更新。", "new_value": value}
     except Exception as e:
-        logger.error(f"执行随机推荐下载时出错: {e}", exc_info=True)
-        return {"ok": False, "error": f"执行随机推荐下载时发生错误: {e}"}
+        logger.error(f"更新配置项 '{key}' 失败: {e}")
+        return {"ok": False, "error": f"更新配置时发生未知错误: {e}"}
 
 @mcp.tool()
 @ensure_json_serializable
