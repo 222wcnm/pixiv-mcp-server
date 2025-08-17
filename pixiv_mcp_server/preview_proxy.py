@@ -8,15 +8,7 @@ from aiohttp import web, ClientSession, ClientTimeout
 logger = logging.getLogger('pixiv-mcp-server')
 
 
-def _detect_outbound_proxy() -> str | None:
-    return (
-        os.getenv('HTTPS_PROXY') or os.getenv('https_proxy') or
-        os.getenv('HTTP_PROXY') or os.getenv('http_proxy') or
-        os.getenv('ALL_PROXY') or os.getenv('all_proxy')
-    )
-
-
-async def _handle_pximg(request: web.Request) -> web.StreamResponse:
+async def _handle_pximg(request: web.Request, proxy: str | None) -> web.StreamResponse:
     url = request.query.get('url', '').strip()
     if not url:
         return web.json_response({'ok': False, 'error': 'missing url'}, status=400)
@@ -36,7 +28,6 @@ async def _handle_pximg(request: web.Request) -> web.StreamResponse:
         'User-Agent': 'Mozilla/5.0 (PixivPreviewProxy)',
     }
     timeout = ClientTimeout(total=30)
-    proxy = _detect_outbound_proxy()
 
     async with ClientSession(timeout=timeout) as session:
         try:
@@ -49,12 +40,16 @@ async def _handle_pximg(request: web.Request) -> web.StreamResponse:
             return web.json_response({'ok': False, 'error': str(e)}, status=502)
 
 
-def start_preview_proxy(host: str, port: int) -> None:
+def start_preview_proxy(host: str, port: int, proxy: str | None) -> None:
     def _run():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        
+        async def handler_wrapper(request):
+            return await _handle_pximg(request, proxy)
+
         app = web.Application()
-        app.add_routes([web.get('/pximg', _handle_pximg)])
+        app.add_routes([web.get('/pximg', handler_wrapper)])
         runner = web.AppRunner(app)
         loop.run_until_complete(runner.setup())
         site = web.TCPSite(runner, host=host, port=port)
@@ -69,5 +64,3 @@ def start_preview_proxy(host: str, port: int) -> None:
     import threading
     th = threading.Thread(target=_run, name='pximg-proxy', daemon=True)
     th.start()
-
-

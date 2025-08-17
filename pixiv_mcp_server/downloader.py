@@ -34,7 +34,18 @@ def _update_task_status(task_id: str, status: str, message: str, details: Dict =
     })
     logger.info(f"任务 {task_id}: 状态更新为 {status} - {message}")
 
-async def _sync_convert_ugoira(zip_path: str, frames: List[Dict], work_dir: str, output_path: str, format: str) -> str:
+async def _sync_convert_ugoira(
+    zip_path: str, 
+    frames: List[Dict], 
+    work_dir: str, 
+    output_path: str, 
+    format: str,
+    webp_quality: int = 80,
+    webp_preset: str = 'default',
+    webp_lossless: bool = False,
+    gif_preset: str = 'ultrafast',
+    gif_fps: int = None
+) -> str:
     """将 Ugoira 的 zip 文件同步转换为指定格式（webp/gif），并进行性能优化。"""
     temp_dir_path = Path(work_dir) / "temp_frames"
     temp_dir_path.mkdir(exist_ok=True)
@@ -53,19 +64,15 @@ async def _sync_convert_ugoira(zip_path: str, frames: List[Dict], work_dir: str,
 
         absolute_output_path = str(Path(output_path).resolve())
         
-        # 根据格式选择不同的 FFmpeg 参数（支持通过环境变量配置）
+        # 根据格式选择不同的 FFmpeg 参数
         cpu_threads = str(os.cpu_count() or 2)
         if format == 'webp':
-            # 可配置：WEBP_QUALITY(0-100), WEBP_PRESET(default/picture/photo/drawing/icon/text), WEBP_LOSSLESS(0/1)
-            webp_quality = os.getenv('WEBP_QUALITY', '80')
-            webp_preset = os.getenv('WEBP_PRESET', 'default')
-            webp_lossless = os.getenv('WEBP_LOSSLESS', '0')
             cmd = [
                 'ffmpeg',
                 '-f', 'concat', '-safe', '0', '-i', "frame_list.txt",
                 '-c:v', 'libwebp',
-                '-lossless', webp_lossless,
-                '-q:v', webp_quality,
+                '-lossless', '1' if webp_lossless else '0',
+                '-q:v', str(webp_quality),
                 '-preset', webp_preset,
                 '-loop', '0',
                 '-threads', cpu_threads,
@@ -73,9 +80,6 @@ async def _sync_convert_ugoira(zip_path: str, frames: List[Dict], work_dir: str,
                 absolute_output_path
             ]
         else: # 默认为 gif
-            # 可配置：GIF_PRESET, GIF_FPS(可选，若设置则强制帧率)
-            gif_preset = os.getenv('GIF_PRESET', 'ultrafast')
-            gif_fps = os.getenv('GIF_FPS')
             vf_chain = "split[s0][s1];[s0]palettegen=stats_mode=single[p];[s1][p]paletteuse=new=1"
             cmd = [
                 'ffmpeg',
@@ -123,7 +127,15 @@ async def _sync_convert_ugoira(zip_path: str, frames: List[Dict], work_dir: str,
         if os.path.exists(zip_path):
             os.remove(zip_path)
 
-async def _background_download_single(task_id: str, illust_id: int):
+async def _background_download_single(
+    task_id: str, 
+    illust_id: int,
+    webp_quality: int,
+    webp_preset: str,
+    webp_lossless: bool,
+    gif_preset: str,
+    gif_fps: int | None
+):
     """在背景下载单个作品，并应用智能存储和命名规则，同时更新任务状态。"""
     if not state.api_client:
         _update_task_status(task_id, "failed", "API 客户端尚未初始化，下载任务取消。")
@@ -181,11 +193,16 @@ async def _background_download_single(task_id: str, illust_id: int):
 
                 _update_task_status(task_id, "processing", f"动图 .zip 下载完成，准备合成为 {output_format}...")
                 await _sync_convert_ugoira(
-                    str(zip_path),
-                    metadata['ugoira_metadata']['frames'],
-                    str(save_path_base),
-                    str(final_output_path),
-                    output_format
+                    zip_path=str(zip_path),
+                    frames=metadata['ugoira_metadata']['frames'],
+                    work_dir=str(save_path_base),
+                    output_path=str(final_output_path),
+                    format=output_format,
+                    webp_quality=webp_quality,
+                    webp_preset=webp_preset,
+                    webp_lossless=webp_lossless,
+                    gif_preset=gif_preset,
+                    gif_fps=gif_fps
                 )
                 _update_task_status(task_id, "success", f"动图已成功保存至 {final_output_path}", {"final_path": str(final_output_path)})
 

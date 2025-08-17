@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Dict, Any
 
 from pixivpy3 import AppPixivAPI
 
@@ -31,9 +31,8 @@ class PixivState:
         # 下载任务状态跟踪
         self.download_tasks = {}
         
-        # 上一次API响应，用于分页
-        self.last_response = {}
-        self.last_response_key: Optional[str] = None
+        # 上一次可分页的API调用，用于 next_page
+        self.last_api_call: Optional[Dict[str, Any]] = None
 
         # 动图输出格式 (gif, webp)
         self.ugoira_format = settings.ugoira_format
@@ -41,6 +40,7 @@ class PixivState:
         # 并发控制器
         self.download_semaphore = asyncio.Semaphore(settings.download_semaphore)  # 网络I/O并发
         self.cpu_bound_semaphore = asyncio.Semaphore(settings.cpu_bound_semaphore) # CPU密集型任务并发
+        self.auth_lock = asyncio.Lock()  # 认证锁
 
         # 代理读取
         if settings.https_proxy:

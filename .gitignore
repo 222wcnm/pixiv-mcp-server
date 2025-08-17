@@ -26,3 +26,9 @@ Thumbs.db
 
 # 日志文件
 *.log
+
+# Python build artifacts
+*.egg-info/
+
+# Plan files
+*.md

@@ -29,27 +29,25 @@
 
 ### 🛠️ 通用工具
 - **`next_page()`**: 获取上一条指令结果的下一页内容。
-- **`update_setting(key, value)`**: 在运行时更新服务器配置 (例如 `download_path`)。
+- **`update_setting(key, value)`**: 在运行时更新任意服务器配置 (例如 `download_path`)。
 
 ### 📥 下载管理
-- **`download(illust_id | illust_ids)`**: 异步下载指定作品，返回任务ID用于追踪。
+- **`download(illust_id | illust_ids, ...)`**: 异步下载指定作品。可接受额外参数 (如 `webp_quality`, `gif_preset` 等) 来控制动图转换质量。
 - **`manage_download_tasks(task_id, action)`**: 管理下载任务。支持 `status` 和 `cancel` 操作。
 
 ### 🔍 搜索与发现
 - **`search_illust(word, ...)`**: 根据关键词搜索插画。
 - **`search_user(word, ...)`**: 搜索用户。
-- **`illust_ranking(mode, ...)`**: 获取插画排行榜 (日榜/周榜/月榜等)。
-- **`illust_related(illust_id, ...)`**: 获取相关推荐作品。
-- **`illust_recommended(...)`**: 获取官方推荐插画 (需认证)。
-- **`trending_tags_illust()`**: 获取热门标签趋势。
-- **`illust_detail(illust_id)`**: 获取单张插画详细信息。
+- **`get_illust_ranking(mode, ...)`**: 获取插画排行榜 (日榜/周榜/月榜等)。
+- **`get_illust_related(illust_id, ...)`**: 获取相关推荐作品。
+- **`get_illust_recommended(...)`**: 获取官方推荐插画 (需认证)。
+- **`get_trending_tags()`**: 获取热门标签趋势。
+- **`get_illust_detail(illust_id)`**: 获取单张插画详细信息。
 
 ### 👥 社区与用户
-- **`illust_follow(...)`**: 获取关注作者的最新作品 (需认证)。
-- **`user_bookmarks(user_id_to_check, ...)`**: 获取用户收藏列表 (需认证)。
-- **`user_following(user_id_to_check, ...)`**: 获取用户关注列表 (需认证)。
-
-> **注意**：所有搜索和浏览工具支持 `view` 和 `limit` 参数控制输出格式和数量。详见[输出视图](#-输出视图)章节。
+- **`get_follow_illusts(...)`**: 获取关注作者的最新作品 (需认证)。
+- **`get_user_bookmarks(user_id_to_check, ...)`**: 获取用户收藏列表 (需认证)。
+- **`get_user_following(user_id_to_check, ...)`**: 获取用户关注列表 (需认证)。
 
 ---
 
@@ -60,7 +58,7 @@
 - **`view='cards'` (默认)**: 以图文并茂的 Markdown 卡片形式展示结果。这是最推荐的模式，它直观、美观，并直接内嵌了图片预览，无需额外点击链接。
 - **`view='raw'`**: 返回原始的、未经处理的 JSON 数据。此模式适合需要将结果用于其他工具或进行程序化处理的场景。
 
-你可以通过环境变量 `DEFAULT_VIEW` 来修改默认的视图模式。
+默认视图已内置为 `cards`，无法通过环境变量修改。
 
 ## 🔧 环境要求
 
@@ -112,8 +110,8 @@ python get_token.py
         "PIXIV_REFRESH_TOKEN": "从.env文件复制或留空自动读取",
         "DOWNLOAD_PATH": "./downloads",
         "FILENAME_TEMPLATE": "{author} - {title}_{id}",
-        "DEFAULT_VIEW": "cards",
-        "DEFAULT_LIMIT": 10
+        "DEFAULT_LIMIT": "10",
+        "UGOIRA_FORMAT": "webp"
       }
     }
   }
@@ -123,19 +121,19 @@ python get_token.py
 
 ## ⚙️ 环境变量配置
 
-| 变量名                | 必需 | 描述                                      | 默认值        |
-|:----------------------|:---:|:------------------------------------------|:--------------|
-| `PIXIV_REFRESH_TOKEN` | ✅   | Pixiv API 认证令牌                       | `无`           |
-| `DOWNLOAD_PATH`       | ❌   | 下载文件根目录                           | `./downloads`|
-| `FILENAME_TEMPLATE`   | ❌   | 文件命名模板                             | `{author} - {title}_{id}` |
-| `DEFAULT_VIEW`        | ❌   | 默认输出视图 (`cards`/`raw`)             | `cards`      |
-| `DEFAULT_LIMIT`       | ❌   | `cards` 视图默认显示数量                 | `10`         |
-| `WEBP_QUALITY`        | ❌   | Ugoira 转 webp 质量 (0-100)              | `80`         |
-| `WEBP_PRESET`         | ❌   | webp 预设 (`default/picture/photo/...`) | `default`    |
-| `WEBP_LOSSLESS`       | ❌   | webp 是否无损 (`0`/`1`)                   | `0`          |
-| `GIF_PRESET`          | ❌   | Ugoira 转 gif 预设                      | `ultrafast`  |
-| `GIF_FPS`             | ❌   | gif 目标帧率                            | `无`           |
-| `HTTP_PROXY` 等       | ❌   | 代理设置                                 | 系统默认     |
+| 变量名                    | 必需 | 描述                                           | 默认值                    |
+|:--------------------------|:---:|:-----------------------------------------------|:--------------------------|
+| `PIXIV_REFRESH_TOKEN`     | ✅  | Pixiv API 认证令牌。                           | `""`                      |
+| `DOWNLOAD_PATH`           | ❌  | 下载文件的根目录。                             | `./downloads`             |
+| `FILENAME_TEMPLATE`       | ❌  | 文件命名模板。                                 | `{author} - {title}_{id}` |
+| `UGOIRA_FORMAT`           | ❌  | 动图（Ugoira）转换的默认格式 (`webp`/`gif`)。    | `webp`                    |
+| `DEFAULT_LIMIT`           | ❌  | 卡片视图默认显示数量 (字符串会被自动转换)。    | `10`                      |
+| `HTTPS_PROXY`             | ❌  | HTTPS 代理的 URL。                             | `""`                      |
+| `PREVIEW_PROXY_ENABLED`   | ❌  | 是否启用本地图片预览代理 (`true`/`false`)。    | `true`                    |
+| `PREVIEW_PROXY_HOST`      | ❌  | 本地预览代理的监听主机。                       | `127.0.0.1`               |
+| `PREVIEW_PROXY_PORT`      | ❌  | 本地预览代理的监听端口。                       | `8643`                    |
+| `DOWNLOAD_SEMAPHORE`      | ❌  | 下载任务的并发数。                             | `8`                       |
+| `CPU_BOUND_SEMAPHORE`     | ❌  | CPU 密集型任务（如动图转换）的并发数。         | `2`                       |
 
 ## 🔗 相关资源
 - **FastMCP**: [MCP 服务器框架](https://github.com/jlowin/fastmcp)

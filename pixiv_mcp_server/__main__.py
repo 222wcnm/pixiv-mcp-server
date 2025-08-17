@@ -5,6 +5,14 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
+from .config import settings
+from .state import state
+from .downloader import HAS_FFMPEG
+from .tools import mcp
+from .api_client import initialize_api_client
+from .preview_proxy import start_preview_proxy
+
+
 def setup_environment():
     """
     加载并解析所有环境变量。
@@ -14,13 +22,9 @@ def setup_environment():
     
     # 解决部分 MCP 客户端将值以 `KEY=VALUE` 形式传入的问题
     # 仅对白名单中的键进行纠正，避免误伤系统变量
-    whitelist_keys = {
-        'PIXIV_REFRESH_TOKEN',
-        'DOWNLOAD_PATH',
-        'FILENAME_TEMPLATE',
-        'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
-        'PREVIEW_PROXY_ENABLED', 'PREVIEW_PROXY_HOST', 'PREVIEW_PROXY_PORT',
-    }
+    # 白名单动态生成自 config.py，并额外包含通用代理变量
+    whitelist_keys = {key.upper() for key in settings.model_fields.keys()}
+    whitelist_keys.update(['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'])
     # 快照环境，避免遍历过程中修改带来的副作用
     env_snapshot = dict(os.environ)
     for key in list(whitelist_keys):
@@ -81,11 +85,6 @@ def main():
     # 步骤 2: 设置环境并加载模块
     # 这个函数必须在导入 state 和其他模块之前调用
     setup_environment()
-    
-    from .state import state
-    from .downloader import HAS_FFMPEG
-    from .tools import mcp
-    from .api_client import initialize_api_client
 
     # 步骤 3: 无论认证状态如何，都先初始化API客户端以支持匿名访问
     initialize_api_client()
@@ -93,8 +92,11 @@ def main():
     # 启动本地预览代理（后台线程）
     if state.preview_proxy_enabled:
         try:
-            from .preview_proxy import start_preview_proxy
-            start_preview_proxy(state.preview_proxy_host, state.preview_proxy_port)
+            start_preview_proxy(
+                host=state.preview_proxy_host, 
+                port=state.preview_proxy_port,
+                proxy=settings.https_proxy
+            )
         except Exception as e:
             logger.warning(f"预览代理启动失败: {e}")
 

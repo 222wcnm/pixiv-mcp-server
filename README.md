@@ -29,27 +29,25 @@
 
 ### 🛠️ General Tools
 - **`next_page()`**: Fetches the next page of results from the previous command.
-- **`update_setting(key, value)`**: Updates the server configuration at runtime (e.g., `download_path`).
+- **`update_setting(key, value)`**: Updates any server configuration at runtime (e.g., `download_path`).
 
 ### 📥 Download Management
-- **`download(illust_id | illust_ids)`**: Asynchronously downloads specified artworks, returning task IDs for tracking.
+- **`download(illust_id | illust_ids, ...)`**: Asynchronously downloads specified artworks. Can accept optional parameters (`webp_quality`, `gif_preset`, etc.) to control ugoira conversion quality.
 - **`manage_download_tasks(task_id, action)`**: Manages download tasks. Supports `status` and `cancel` actions.
 
 ### 🔍 Search & Discovery
 - **`search_illust(word, ...)`**: Searches for illustrations by keyword.
 - **`search_user(word, ...)`**: Searches for users.
-- **`illust_ranking(mode, ...)`**: Retrieves illustration rankings (daily/weekly/monthly, etc.).
-- **`illust_related(illust_id, ...)`**: Gets recommended works related to a specific illustration.
-- **`illust_recommended(...)`**: Fetches official recommended illustrations (Authentication required).
-- **`trending_tags_illust()`**: Gets trending tags.
-- **`illust_detail(illust_id)`**: Retrieves detailed information for a single illustration.
+- **`get_illust_ranking(mode, ...)`**: Retrieves the illustration rankings.
+- **`get_illust_related(illust_id, ...)`**: Gets recommended artworks related to the specified illustration.
+- **`get_illust_recommended(...)`**: Fetches a list of official recommended illustrations (Authentication required).
+- **`get_trending_tags()`**: Gets the current trending tag trends.
+- **`get_illust_detail(illust_id)`**: Retrieves detailed information for a single illustration.
 
 ### 👥 Community & User
-- **`illust_follow(...)`**: Fetches the latest works from followed artists (Authentication required).
-- **`user_bookmarks(user_id_to_check, ...)`**: Retrieves a user's bookmark list (Authentication required).
-- **`user_following(user_id_to_check, ...)`**: Retrieves a user's following list (Authentication required).
-
-> **Note**: All search and browsing tools support `view` and `limit` parameters to control the output format and quantity. See the [Output Views](#-output-views) section for details.
+- **`get_follow_illusts(...)`**: Fetches the latest works from followed artists (home feed) (Authentication required).
+- **`get_user_bookmarks(user_id_to_check, ...)`**: Retrieves a user's bookmark list (Authentication required).
+- **`get_user_following(user_id_to_check, ...)`**: Retrieves a user's following list (Authentication required).
 
 ---
 
@@ -60,7 +58,7 @@ To enhance the user experience in AI conversations, this toolkit introduces a `v
 - **`view='cards'` (Default)**: Displays results as rich Markdown cards with embedded image previews. This is the recommended mode for its intuitive and visually appealing presentation.
 - **`view='raw'`**: Returns the raw, unprocessed JSON data. This mode is suitable for programmatic use or when results need to be piped into other tools.
 
-You can change the default view mode via the `DEFAULT_VIEW` environment variable.
+The default view is hardcoded as `cards` and cannot be changed via environment variables.
 
 ## 🔧 Requirements
 
@@ -112,8 +110,8 @@ In your MCP client, use the following configuration:
         "PIXIV_REFRESH_TOKEN": "Copy from .env file or leave empty to read automatically",
         "DOWNLOAD_PATH": "./downloads",
         "FILENAME_TEMPLATE": "{author} - {title}_{id}",
-        "DEFAULT_VIEW": "cards",
-        "DEFAULT_LIMIT": 10
+        "DEFAULT_LIMIT": "10",
+        "UGOIRA_FORMAT": "webp"
       }
     }
   }
@@ -123,19 +121,19 @@ In your MCP client, use the following configuration:
 
 ## ⚙️ Environment Variables
 
-| Variable Name         | Required | Description                                     | Default Value             |
-|-----------------------|:--------:|-------------------------------------------------|---------------------------|
-| `PIXIV_REFRESH_TOKEN` | ✅       | Pixiv API authentication token.                 | `None`                    |
-| `DOWNLOAD_PATH`       | ❌       | Root directory for downloaded files.            | `./downloads`             |
-| `FILENAME_TEMPLATE`   | ❌       | File naming template.                           | `{author} - {title}_{id}` |
-| `DEFAULT_VIEW`        | ❌       | Default output view (`cards`/`raw`).            | `cards`                   |
-| `DEFAULT_LIMIT`       | ❌       | Default number of items for `cards` view.       | `10`                      |
-| `WEBP_QUALITY`        | ❌       | Ugoira to webp conversion quality (0-100).      | `80`                      |
-| `WEBP_PRESET`         | ❌       | Webp preset (`default`/`picture`/`photo`...).   | `default`                 |
-| `WEBP_LOSSLESS`       | ❌       | Webp lossless mode (`0`/`1`).                   | `0`                       |
-| `GIF_PRESET`          | ❌       | Ugoira to gif conversion preset.                | `ultrafast`               |
-| `GIF_FPS`             | ❌       | Target FPS for gif conversion.                  | `None`                    |
-| `HTTP_PROXY`, etc.    | ❌       | Proxy settings.                                 | System default            |
+| Variable Name             | Required | Description                                                  | Default Value             |
+|---------------------------|:--------:|--------------------------------------------------------------|---------------------------|
+| `PIXIV_REFRESH_TOKEN`     | ✅       | Pixiv API authentication token.                              | `""`                      |
+| `DOWNLOAD_PATH`           | ❌       | Root directory for downloaded files.                         | `./downloads`             |
+| `FILENAME_TEMPLATE`       | ❌       | File naming template.                                        | `{author} - {title}_{id}` |
+| `UGOIRA_FORMAT`           | ❌       | Default format for ugoira conversion (`webp`/`gif`).         | `webp`                    |
+| `DEFAULT_LIMIT`           | ❌       | Default number of items for card view. (String is auto-cast) | `10`                      |
+| `HTTPS_PROXY`             | ❌       | URL for the HTTPS proxy.                                     | `""`                      |
+| `PREVIEW_PROXY_ENABLED`   | ❌       | Enable the local image preview proxy (`true`/`false`).       | `true`                    |
+| `PREVIEW_PROXY_HOST`      | ❌       | Host for the local preview proxy.                            | `127.0.0.1`               |
+| `PREVIEW_PROXY_PORT`      | ❌       | Port for the local preview proxy.                            | `8643`                    |
+| `DOWNLOAD_SEMAPHORE`      | ❌       | Number of concurrent downloads.                              | `8`                       |
+| `CPU_BOUND_SEMAPHORE`     | ❌       | Number of concurrent CPU-intensive tasks (e.g., ugoira).     | `2`                       |
 
 ## 🔗 Related Resources
 - **FastMCP**: [MCP Server Framework](https://github.com/jlowin/fastmcp)

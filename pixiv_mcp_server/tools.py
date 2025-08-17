@@ -57,10 +57,16 @@ async def _api_tool_handler(
         if offset is not None:
             kwargs['offset'] = offset
         json_result = await api_method(*args, **kwargs)
-        state.last_response = json_result  # 保存响应以供翻页
-        state.last_response_key = response_key # 保存响应类型以供翻页
-        if "next_url" not in json_result and "next" in json_result:
-            json_result["next_url"] = json_result["next"]
+        
+        # 保存本次调用上下文，用于分页
+        state.last_api_call = {
+            "api_method_name": api_method_name,
+            "args": args,
+            "kwargs": kwargs,
+            "response_key": response_key,
+            "error_message": error_message,
+            "not_found_message": not_found_message,
+        }
     except Exception as e:
         logger.error(f"调用 API 方法 {api_method_name} 时出错: {e}", exc_info=True)
         return {"ok": False, "error": f"{error_message}: 调用 API 时发生异常: {e}"}
@@ -121,67 +127,47 @@ async def _api_tool_handler(
 @mcp.tool()
 async def next_page() -> dict:
     """Fetches the next page of results from the previous command."""
-    if not state.api_client:
-        return {"ok": False, "error": "API 客户端尚未初始化，请检查认证状态。"}
-    if not state.last_response or not state.last_response.get("next_url"):
+    if not state.last_api_call:
         return {"ok": False, "error": "没有可供翻页的上一条指令。"}
+
+    # 提取上一次调用的上下文
+    last_call = state.last_api_call
+    api_method_name = last_call["api_method_name"]
+    args = last_call["args"]
+    kwargs = last_call["kwargs"]
     
-    next_url = state.last_response["next_url"]
-    
-    # 从 state 中安全地获取 response_key
-    response_key = state.last_response_key
-    if not response_key:
-        return {"ok": False, "error": "无法确定上一条指令的响应类型，无法翻页。"}
+    # 计算新的 offset
+    current_offset = kwargs.get("offset", 0)
+    limit = kwargs.get("limit", settings.default_limit)
+    new_offset = current_offset + limit
+    kwargs["offset"] = new_offset
 
-    # 调用 next_page API
-    response = await state.api_client.next_page(next_url)
-    json_result = response.json()
-    state.last_response = json_result
-    state.last_response_key = response_key # 保持 key 的传递
-
-    # 统一错误处理
-    error = handle_api_error(json_result)
-    if error:
-        return {"ok": False, "error": f"获取下一页失败: {error}"}
-
-    # 提取数据
-    items = json_result.get(response_key, [])
-    if not items:
-        return {"ok": True, "cards": [], "message": "没有更多内容了。"}
-
-    # 注入代理 URL
-    if response_key == "illusts":
-        inject_proxy_urls_into_illust_list(items)
-    elif response_key == "user_previews":
-        inject_proxy_profile_urls_into_user_previews(items)
-
-    # 渲染 Markdown
-    title = "下一页"
-    show_nsfw = False # 默认为 False
-    limit = settings.default_limit
-    
-    if response_key == "illusts":
-        cards = [_extract_card_from_illust(item) for item in items]
-    elif response_key == "user_previews":
-        cards = [_extract_card_from_user(item) for item in items]
-    else:
-        cards = items
-
-    markdown = render_cards_to_markdown(cards, title, show_nsfw, limit)
-    return {
-        "ok": True,
-        "markdown": markdown,
-        "card_count": len(items),
-        "display_count": min(len(items), limit),
-        "nsfw_filtered": not show_nsfw,
-    }
+    # 使用更新后的参数重新调用通用处理器
+    return await _api_tool_handler(
+        api_method_name,
+        *args,
+        response_key=last_call["response_key"],
+        error_message=last_call["error_message"],
+        not_found_message=last_call["not_found_message"],
+        **kwargs,
+    )
 
 
 
 @mcp.tool()
-async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[int]] = None) -> dict:
+async def download(
+    illust_id: Optional[int] = None, 
+    illust_ids: Optional[List[int]] = None,
+    webp_quality: int = 80,
+    webp_preset: str = 'default',
+    webp_lossless: bool = False,
+    gif_preset: str = 'ultrafast',
+    gif_fps: Optional[int] = None
+) -> dict:
     """
-    Downloads one or more artworks by their IDs asynchronously in the background. Returns task IDs for tracking progress via `get_download_status`.
+    Downloads one or more artworks by their IDs asynchronously in the background. 
+    Returns task IDs for tracking progress via `get_download_status`.
+    Advanced parameters can be used to control the quality of ugoira (animated) downloads.
     """
     if not illust_id and not illust_ids:
         return {
@@ -206,7 +192,15 @@ async def download(illust_id: Optional[int] = None, illust_ids: Optional[List[in
             "status": "queued",
             "message": "任务已创建，正在等待调度。",
         }
-        asyncio.create_task(_background_download_single(task_id, an_id))
+        asyncio.create_task(_background_download_single(
+            task_id=task_id, 
+            illust_id=an_id,
+            webp_quality=webp_quality,
+            webp_preset=webp_preset,
+            webp_lossless=webp_lossless,
+            gif_preset=gif_preset,
+            gif_fps=gif_fps
+        ))
     
     return {
         "ok": True,
@@ -279,40 +273,48 @@ async def manage_download_tasks(
 async def update_setting(key: str, value: Any) -> dict:
     """
     Updates the server configuration at runtime.
-    Supported 'key' values include: 'download_path', 'ugoira_format', 'filename_template'.
+    Any valid key from the environment variables can be updated.
     """
-    supported_keys = {
-        "download_path": str,
-        "ugoira_format": str,
-        "filename_template": str,
-    }
+    if not hasattr(settings, key):
+        supported_keys = list(settings.model_fields.keys())
+        return {"ok": False, "error": f"不支持的配置项: '{key}'", "supported_keys": supported_keys}
 
-    if key not in supported_keys:
-        return {"ok": False, "error": f"不支持的配置项: '{key}'", "supported_keys": list(supported_keys.keys())}
+    # 获取期望的类型
+    expected_type = settings.model_fields[key].annotation
 
-    # 类型校验
-    expected_type = supported_keys[key]
-    if not isinstance(value, expected_type):
-        return {"ok": False, "error": f"配置项 '{key}' 的值类型错误。期望类型: {expected_type.__name__}, 实际类型: {type(value).__name__}"}
+    # 类型校验和转换
+    try:
+        # Pydantic v2 uses model_validate
+        validated_value = settings.model_validate({key: value})[key]
+    except Exception:
+        # Fallback for simple casting for broader compatibility
+        try:
+            if expected_type is bool and isinstance(value, str):
+                validated_value = value.lower() in ('true', '1', 'yes')
+            else:
+                validated_value = expected_type(value)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"配置项 '{key}' 的值类型错误。期望类型: {expected_type.__name__}, 实际类型: {type(value).__name__}"}
 
     # 特定值的合法性校验
     if key == "ugoira_format":
         supported_formats = ["webp", "gif"]
-        if value.lower() not in supported_formats:
-            return {"ok": False, "error": f"不支持的动图格式 '{value}'", "supported_formats": supported_formats}
-        value = value.lower()
+        if str(validated_value).lower() not in supported_formats:
+            return {"ok": False, "error": f"不支持的动图格式 '{validated_value}'", "supported_formats": supported_formats}
+        validated_value = str(validated_value).lower()
     
     if key == "download_path":
         try:
-            Path(value).mkdir(parents=True, exist_ok=True)
+            Path(validated_value).mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.error(f"创建下载路径 '{value}' 失败: {e}")
+            logger.error(f"创建下载路径 '{validated_value}' 失败: {e}")
             return {"ok": False, "error": f"无法创建或访问指定的下载路径: {e}"}
 
     try:
-        setattr(state, key, value)
-        logger.info(f"配置项 '{key}' 已更新为: {value}")
-        return {"ok": True, "message": f"配置 '{key}' 已成功更新。", "new_value": value}
+        setattr(state, key, validated_value)
+        setattr(settings, key, validated_value) # Also update the source settings object
+        logger.info(f"配置项 '{key}' 已更新为: {validated_value}")
+        return {"ok": True, "message": f"配置 '{key}' 已成功更新。", "new_value": validated_value}
     except Exception as e:
         logger.error(f"更新配置项 '{key}' 失败: {e}")
         return {"ok": False, "error": f"更新配置时发生未知错误: {e}"}
@@ -345,21 +347,31 @@ async def search_illust(
         not_found_message=f"未能找到与 '{search_word}' 相关的插画。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_illust_detail")
 @ensure_json_serializable
-async def illust_detail(illust_id: int) -> dict:
+async def get_illust_detail(illust_id: int, view: str = "cards") -> dict:
     """Retrieves detailed information for a single illustration."""
     json_result = await state.api_client.illust_detail(illust_id)
     error = handle_api_error(json_result)
     if error:
         return {"ok": False, "error": error}
+    
     illust = json_result.get('illust', {})
-    inject_proxy_urls_into_illust(illust)
-    return {"ok": True, "illust": illust}
+    if not illust:
+        return {"ok": True, "message": "未找到该作品的详细信息。"}
 
-@mcp.tool()
+    inject_proxy_urls_into_illust(illust)
+
+    if view == 'raw':
+        return {"ok": True, "illust": illust}
+    else:
+        card = _extract_card_from_illust(illust)
+        markdown = render_cards_to_markdown([card], f"作品详情: {illust.get('title')}", show_nsfw=True, max_items=1)
+        return {"ok": True, "markdown": markdown}
+
+@mcp.tool(name="get_illust_related")
 @ensure_json_serializable
-async def illust_related(illust_id: int, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_illust_related(illust_id: int, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Gets recommended artworks related to the specified illustration."""
     return await _api_tool_handler(
         "illust_related",
@@ -372,9 +384,9 @@ async def illust_related(illust_id: int, offset: int = 0, view: str = "cards", l
         not_found_message=f"找不到与插画 {illust_id} 相关的推荐。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_illust_ranking")
 @ensure_json_serializable
-async def illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_illust_ranking(mode: str = "day", date: Optional[str] = None, offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Retrieves the illustration rankings."""
     return await _api_tool_handler(
         "illust_ranking",
@@ -403,10 +415,10 @@ async def search_user(word: str, offset: int = 0, view: str = "cards", limit: in
         not_found_message=f"未能找到名为 '{word}' 的用户。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_illust_recommended")
 @ensure_json_serializable
 @require_authentication
-async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_illust_recommended(offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Fetches a list of official recommended illustrations (Authentication required)."""
     return await _api_tool_handler(
         "illust_recommended",
@@ -418,9 +430,9 @@ async def illust_recommended(offset: int = 0, view: str = "cards", limit: int = 
         not_found_message="暂无推荐内容。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_trending_tags")
 @ensure_json_serializable
-async def trending_tags_illust() -> dict:
+async def get_trending_tags() -> dict:
     """Gets the current trending tag trends."""
     json_result = await state.api_client.trending_tags_illust()
     error = handle_api_error(json_result)
@@ -428,17 +440,25 @@ async def trending_tags_illust() -> dict:
         return {"ok": False, "error": error}
     
     trend_tags = json_result.get('trend_tags', [])
-    inject_proxy_into_trend_tags(trend_tags)
     if not trend_tags:
-        return {"ok": True, "trend_tags": [], "message": "无法获取热门标签。"}
+        return {"ok": True, "tags": [], "message": "无法获取热门标签。"}
         
-    tag_list = [f"- {tag.get('tag')} (翻译: {tag.get('translated_name', '无')})" for tag in trend_tags]
-    return {"ok": True, "trend_tags": trend_tags, "summary": tag_list}
+    # 只提取核心信息，避免上下文爆炸
+    summarized_tags = [
+        {
+            "tag": tag.get('tag'),
+            "translated_name": tag.get('translated_name')
+        }
+        for tag in trend_tags
+    ]
+    
+    tag_list = [f"- {tag.get('tag')} (翻译: {tag.get('translated_name', '无')})" for tag in summarized_tags]
+    return {"ok": True, "tags": summarized_tags, "summary": "\n".join(tag_list)}
 
-@mcp.tool()
+@mcp.tool(name="get_follow_illusts")
 @ensure_json_serializable
 @require_authentication
-async def illust_follow(restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_follow_illusts(restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Fetches the latest works from followed artists (home feed) (Authentication required)."""
     return await _api_tool_handler(
         "illust_follow",
@@ -451,10 +471,10 @@ async def illust_follow(restrict: str = "public", offset: int = 0, view: str = "
         not_found_message="您的关注动态中暂时没有新作品。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_user_bookmarks")
 @ensure_json_serializable
 @require_authentication
-async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str = "public", tag: Optional[str] = None, max_bookmark_id: Optional[int] = None, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Retrieves a user's bookmark list (Authentication required)."""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
@@ -473,10 +493,10 @@ async def user_bookmarks(user_id_to_check: Optional[int] = None, restrict: str =
         not_found_message=f"找不到用户 {target_user_id} 的收藏。",
     )
 
-@mcp.tool()
+@mcp.tool(name="get_user_following")
 @ensure_json_serializable
 @require_authentication
-async def user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
+async def get_user_following(user_id_to_check: Optional[int] = None, restrict: str = "public", offset: int = 0, view: str = "cards", limit: int = settings.default_limit) -> dict:
     """Retrieves a user's following list (Authentication required)."""
     target_user_id = user_id_to_check if user_id_to_check is not None else state.user_id
     if target_user_id is None:
